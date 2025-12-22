@@ -1,14 +1,10 @@
-pub fn add(left: u64, right: u64) -> u64 {
-    left + right
-}
+#![warn(clippy::pedantic)]
+#![allow(clippy::too_many_lines)]
+#![allow(mixed_script_confusables)]
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn it_works() {
-        let result = add(2, 2);
-        assert_eq!(result, 4);
-    }
-}
+mod union_find;
+pub mod numbers;
+pub mod permutations;
+pub mod span;
+pub mod puzzle_geometry;
+pub mod ksolve;
