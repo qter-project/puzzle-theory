@@ -380,7 +380,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "puzzle-theory"
+name = "puzzle_theory"
 version = "0.1.0"
 dependencies = [
  "algebraics",
