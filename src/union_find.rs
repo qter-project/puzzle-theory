@@ -14,9 +14,6 @@ pub trait SetInfo {
     /// The type representing information for each path
     type PathInfo;
 
-    /// Whether to allow weighted quick-union (for better performance) or to force unions to happen in the order specified by the arguments to `union`
-    const ALLOW_WEIGHTED: bool = false;
-
     /// Merge the info for two sets, used on the `union` call. Return the path info for the new child.
     fn merge(&mut self, new_child: Self);
 
@@ -27,8 +24,6 @@ pub trait SetInfo {
 impl SetInfo for () {
     type PathInfo = ();
 
-    const ALLOW_WEIGHTED: bool = true;
-
     fn merge(&mut self, _new_child: Self) {}
 
     fn join_paths(_path: &mut Self::PathInfo, _path_of_old_root: &Self::PathInfo) {}
@@ -36,8 +31,6 @@ impl SetInfo for () {
 
 enum UnionFindEntry<S: SetInfo> {
     RootOfSet {
-        // For weighted union-find
-        weight: usize,
         set_meta: S,
     },
     OwnedBy {
@@ -55,7 +48,6 @@ pub struct UnionFind<S: SetInfo> {
 /// Information about an element, returned by the `find` operation
 pub struct FindResult<'a, S: SetInfo> {
     root_idx: usize,
-    set_size: usize,
     set_meta: &'a S,
     path_meta: Ref<'a, Option<S::PathInfo>>,
 }
@@ -65,12 +57,6 @@ impl<S: SetInfo> FindResult<'_, S> {
     #[must_use]
     pub fn root_idx(&self) -> usize {
         self.root_idx
-    }
-
-    /// The total size of the set
-    #[must_use]
-    pub fn set_size(&self) -> usize {
-        self.set_size
     }
 
     /// Metadata associated with the set the element is a member of
@@ -93,7 +79,6 @@ impl<S: SetInfo + Default> UnionFind<S> {
         for _ in 0..item_count {
             sets.push((
                 UnionFindEntry::RootOfSet {
-                    weight: 1,
                     set_meta: S::default(),
                 },
                 RefCell::new(None),
@@ -114,7 +99,6 @@ impl<S: SetInfo> UnionFind<S> {
         for info in set_infos {
             sets.push((
                 UnionFindEntry::RootOfSet {
-                    weight: 1,
                     set_meta: info,
                 },
                 RefCell::new(None),
@@ -135,9 +119,8 @@ impl<S: SetInfo> UnionFind<S> {
         let (entry, path_meta) = &self.sets[item];
 
         match entry {
-            UnionFindEntry::RootOfSet { weight, set_meta } => FindResult {
+            UnionFindEntry::RootOfSet { set_meta } => FindResult {
                 root_idx: item,
-                set_size: *weight,
                 set_meta,
                 path_meta: path_meta.borrow(),
             },
@@ -166,19 +149,14 @@ impl<S: SetInfo> UnionFind<S> {
     ///
     /// If `S::ALLOW_WEIGHTED` is `true`, then this will implement weighted quick union and `parent` and `child` may be swapped for performance.
     pub fn union(&mut self, parent: usize, child: usize, path_info: S::PathInfo) {
-        let mut a_result = self.find(parent);
-        let mut b_result = self.find(child);
+        let a_result = self.find(parent);
+        let b_result = self.find(child);
 
         if a_result.root_idx == b_result.root_idx {
             return;
         }
 
-        if S::ALLOW_WEIGHTED && a_result.set_size < b_result.set_size {
-            mem::swap(&mut a_result, &mut b_result);
-        }
-
         let a_idx = a_result.root_idx;
-        let b_size = b_result.set_size;
         let b_idx = b_result.root_idx;
 
         drop(a_result);
@@ -195,16 +173,13 @@ impl<S: SetInfo> UnionFind<S> {
 
         let other_set_meta = match old_b_data {
             UnionFindEntry::RootOfSet {
-                weight: _,
                 set_meta,
             } => set_meta,
             UnionFindEntry::OwnedBy { owned_by: _ } => unreachable!(),
         };
 
         match &mut self.sets[a_idx].0 {
-            UnionFindEntry::RootOfSet { weight, set_meta } => {
-                *weight += b_size;
-
+            UnionFindEntry::RootOfSet { set_meta } => {
                 set_meta.merge(other_set_meta);
             }
             UnionFindEntry::OwnedBy { owned_by: _ } => unreachable!(),

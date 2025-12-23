@@ -1,6 +1,6 @@
 use std::sync::{Arc, LazyLock};
 
-use chumsky::{Parser, prelude::{choice, just}};
+use chumsky::{Parser, error::Rich, extra::Full, prelude::{choice, just}};
 use internment::ArcIntern;
 
 use crate::{
@@ -13,7 +13,7 @@ use crate::{
 
 /// Parse a puzzle definition
 #[must_use] 
-pub fn puzzle_definition() -> impl Parser<'static, File, WithSpan<Arc<PuzzleGeometry>>> {
+pub fn puzzle_definition() -> impl Parser<'static, File, WithSpan<Arc<PuzzleGeometry>>, Full<Rich<'static, char, Span>, (), ()>> {
     choice((
         just("3x3").to_span().map(|span: Span| span.with(Arc::clone(&*THREE_BY_THREE))),
         just("pyraminx").to_span().map(|span: Span| span.with(Arc::clone(&*PYRAMINX))),

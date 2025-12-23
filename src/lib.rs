@@ -2,7 +2,7 @@
 #![allow(clippy::too_many_lines)]
 #![allow(mixed_script_confusables)]
 
-mod union_find;
+pub mod union_find;
 pub mod numbers;
 pub mod permutations;
 pub mod span;
