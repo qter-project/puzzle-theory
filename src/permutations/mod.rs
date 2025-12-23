@@ -6,7 +6,7 @@ use std::{
 use internment::ArcIntern;
 use itertools::Itertools;
 
-use crate::{numbers::{I, Int, U}, span::Span};
+use crate::numbers::{I, Int, U};
 
 pub mod schreier_sims;
 
@@ -16,7 +16,6 @@ pub struct PermutationGroup {
     facelet_colors: Vec<ArcIntern<str>>,
     generators: HashMap<ArcIntern<str>, Permutation>,
     generator_inverses: HashMap<ArcIntern<str>, ArcIntern<str>>,
-    definition: Option<Span>,
 }
 
 impl PermutationGroup {
@@ -64,19 +63,7 @@ impl PermutationGroup {
             facelet_colors,
             generators,
             generator_inverses,
-            definition: None,
         }
-    }
-
-    /// Add a definition to the permutation group; should ONLY BE USED BY PUZZLEGEOMETRY
-    pub(crate) fn with_definition(mut self, def: Span) -> Self {
-        self.definition = Some(def);
-        self
-    }
-    
-    /// Return the definition of the puzzle iff it was created by puzzlegeometry
-    pub fn definition(&self) -> Option<&Span> {
-        self.definition.as_ref()
     }
 
     /// The number of facelets in the permutation group
@@ -396,6 +383,7 @@ impl Algorithm {
     /// # Errors
     ///
     /// If the string cannot be parsed as an algorithm, this code will return `None`
+    #[must_use] 
     pub fn parse_from_string(perm_group: Arc<PermutationGroup>, string: &str) -> Option<Algorithm> {
         let mut permutation = perm_group.identity();
 
@@ -504,11 +492,11 @@ impl core::fmt::Debug for Algorithm {
 mod tests {
     use internment::ArcIntern;
 
-    use crate::{numbers::{I, Int}, puzzle_geometry::parsing::parse_definition};
+    use crate::{numbers::{I, Int}, puzzle_geometry::parsing::puzzle};
 
     #[test]
     fn exponentiation() {
-        let cube_group = parse_definition("3x3").unwrap().permutation_group();
+        let cube_group = puzzle("3x3").permutation_group();
 
         let mut perm = cube_group.identity();
 

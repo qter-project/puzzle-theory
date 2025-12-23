@@ -266,9 +266,7 @@ impl PuzzleGeometry {
                     .map(|(_, v)| ArcIntern::clone(&v.0.color))
                     .collect(),
                 generators,
-            ).with_definition(
-                self.definition.clone()
-                )), to_skip)
+            )), to_skip)
         })
     }
 
@@ -807,7 +805,7 @@ fn point_compare(a: &Vector<3>, b: &Vector<3>) -> Ordering {
 mod tests {
     use std::{cmp::Ordering, collections::HashSet};
 
-    use crate::{ksolve::KSolveMove, numbers::{Int, U}, permutations::{Permutation, schreier_sims::StabilizerChain}, puzzle_geometry::parsing::parse_definition};
+    use crate::{ksolve::KSolveMove, numbers::{Int, U}, permutations::{Permutation, schreier_sims::StabilizerChain}, puzzle_geometry::parsing::puzzle};
 
     use super::{
         Face, Point, PuzzleGeometryError,
@@ -959,7 +957,7 @@ mod tests {
 
     #[test]
     fn three_by_three() {
-        let geometry = parse_definition("3x3").unwrap();
+        let geometry = puzzle("3x3");
         
         assert_eq!(geometry.stickers().len(), 54);
 
@@ -1087,7 +1085,7 @@ mod tests {
 
     #[test]
     fn pyraminx() {
-        let geometry = parse_definition("pyraminx").unwrap();
+        let geometry = puzzle("pyraminx");
 
         assert_eq!(geometry.stickers().len(), 36);
 
@@ -1107,7 +1105,7 @@ mod tests {
 
     #[test]
     fn megaminx() {
-        let megaminx = parse_definition("megaminx").unwrap();
+        let megaminx = puzzle("megaminx");
         assert_eq!(megaminx.ksolve().sets.len(), 2);
         assert_eq!(
             megaminx

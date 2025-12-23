@@ -229,7 +229,7 @@ impl TryFrom<KSolveFields> for KSolve {
 
 #[cfg(test)]
 mod tests {
-    use crate::puzzle_geometry::parsing::parse_definition;
+    use crate::puzzle_geometry::parsing::puzzle;
 
     use super::*;
 
@@ -257,7 +257,7 @@ mod tests {
 
     #[test]
     fn test_solved_3x3() {
-        let kpuzzle_3x3 = parse_definition("3x3").unwrap().ksolve();
+        let kpuzzle_3x3 = puzzle("3x3").ksolve();
         let solved = kpuzzle_3x3.solved();
 
         let corner_idx = usize::from(kpuzzle_3x3.sets()[0].piece_count().get() != 8);
@@ -284,7 +284,7 @@ mod tests {
 
     #[test]
     fn test_zero_indexed_transformation() {
-        let kpuzzle_3x3 = parse_definition("3x3").unwrap().ksolve();
+        let kpuzzle_3x3 = puzzle("3x3").ksolve();
         let ksolve_move = &kpuzzle_3x3.moves[0];
 
         let expected_zero_indexed_transformation = ksolve_move

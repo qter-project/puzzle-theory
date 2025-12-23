@@ -1,5 +1,6 @@
 use std::sync::{Arc, LazyLock};
 
+use chumsky::{Parser, prelude::{choice, just}};
 use internment::ArcIntern;
 
 use crate::{
@@ -7,21 +8,27 @@ use crate::{
         PuzzleDescriptionString, PuzzleGeometry, PuzzleGeometryDefinition, knife::{CutSurface, PlaneCut},
         num::{Num, Vector}, shapes::{CUBE, DODECAHEDRON, TETRAHEDRON},
     },
-    span::Span,
+    span::{File, Span, WithSpan},
 };
 
-/// Temporary until parsing definition strings is properly implemented
+/// Parse a puzzle definition
+#[must_use] 
+pub fn puzzle_definition() -> impl Parser<'static, File, WithSpan<Arc<PuzzleGeometry>>> {
+    choice((
+        just("3x3").to_span().map(|span: Span| span.with(Arc::clone(&*THREE_BY_THREE))),
+        just("pyraminx").to_span().map(|span: Span| span.with(Arc::clone(&*PYRAMINX))),
+        just("megaminx").to_span().map(|span: Span| span.with(Arc::clone(&*MEGAMINX))),
+    ))
+}
+
+/// Get a puzzle from a static definition. Useful for testcases.
+///
+/// # Panics
+///
+/// Panics if the definition is invalid.
 #[must_use]
-pub fn parse_definition(def: &str) -> Option<Arc<PuzzleGeometry>> {
-    if def == "3x3" {
-        Some(Arc::clone(&*THREE_BY_THREE))
-    } else if def == "pyraminx" {
-        Some(Arc::clone(&*PYRAMINX))
-    } else if def == "megaminx" {
-        Some(Arc::clone(&*MEGAMINX))
-    } else {
-        None
-    }
+pub fn puzzle(def: &'static str) -> WithSpan<Arc<PuzzleGeometry>> {
+    puzzle_definition().parse(File::from(def)).into_output().unwrap()
 }
 
 static THREE_BY_THREE: LazyLock<Arc<PuzzleGeometry>> = LazyLock::new(|| {

@@ -179,7 +179,7 @@ mod tests {
 
     use crate::{
         numbers::{Int, U},
-        permutations::{Algorithm, Permutation, PermutationGroup}, puzzle_geometry::parsing::parse_definition,
+        permutations::{Algorithm, Permutation, PermutationGroup}, puzzle_geometry::parsing::puzzle,
     };
 
     use super::StabilizerChain;
@@ -213,7 +213,7 @@ mod tests {
 
     #[test]
     fn three_by_three() {
-        let cube_def = parse_definition("3x3").unwrap().permutation_group();
+        let cube_def = puzzle("3x3").permutation_group();
 
         let method = StabilizerChain::new(&cube_def);
 
