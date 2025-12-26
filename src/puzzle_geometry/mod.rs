@@ -1189,12 +1189,10 @@ mod tests {
         assert_eq!(ksolve.moves().len(), 18);
 
         assert_eq!(ksolve.sets().len(), 2);
-        let corner_idx = usize::from(ksolve.sets()[0].piece_count().get() != 8);
-        let edge_idx = 1 - corner_idx;
-        assert_eq!(ksolve.sets()[corner_idx].piece_count().get(), 8);
-        assert_eq!(ksolve.sets()[edge_idx].piece_count().get(), 12);
-        assert_eq!(ksolve.sets()[corner_idx].orientation_count().get(), 3);
-        assert_eq!(ksolve.sets()[edge_idx].orientation_count().get(), 2);
+        assert_eq!(ksolve.sets()[0].piece_count().get(), 8);
+        assert_eq!(ksolve.sets()[1].piece_count().get(), 12);
+        assert_eq!(ksolve.sets()[0].orientation_count().get(), 3);
+        assert_eq!(ksolve.sets()[1].orientation_count().get(), 2);
 
         for generator in ksolve.moves() {
             let transform = generator.transformation();
@@ -1213,7 +1211,7 @@ mod tests {
 
                 assert_eq!(amt_moved, 4);
 
-                if idx == edge_idx {
+                if idx == 1 {
                     assert_eq!(orientation_sum.rem_euclid(2), 0);
                 } else {
                     assert_eq!(orientation_sum.rem_euclid(3), 0);
