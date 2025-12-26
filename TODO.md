@@ -13,7 +13,6 @@
 
 ## PuzzleGeometry
 
-- Canonical ordering of pieces
 - Canonical ordering of orbits
 - ⭐Detect identical pieces
 - ⭐Implement better face cutting algorithm

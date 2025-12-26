@@ -211,7 +211,7 @@ pub struct PieceData {
 
 impl PieceData {
     /// Get the individual stickers that belong to this piece. These are indices of `PuzzleGeometry::non_fixed_stickers`.
-    #[must_use] 
+    #[must_use]
     pub fn stickers(&self) -> &[usize] {
         &self.stickers
     }
@@ -381,7 +381,7 @@ impl PuzzleGeometry {
     pub fn ksolve(&self) -> Arc<KSolve> {
         Arc::clone(&self.calc_ksolve_data().0)
     }
-    
+
     #[must_use]
     fn calc_ksolve_data(&self) -> &(Arc<KSolve>, Arc<[Box<[PieceData]>]>) {
         // Note: the KSolve permutation vector is **1-indexed**. See the test
@@ -400,7 +400,8 @@ impl PuzzleGeometry {
 
             let mut pieces: HashMap<Vec<ArcIntern<str>>, Vec<usize>> = HashMap::new();
 
-            for (sticker, (_, regions)) in self.non_fixed_stickers().iter().enumerate() {
+            let non_fixed_stickers = self.non_fixed_stickers();
+            for (sticker, (_, regions)) in non_fixed_stickers.iter().enumerate() {
                 pieces
                     .entry(regions.iter().sorted_unstable().cloned().collect())
                     .or_default()
@@ -427,13 +428,27 @@ impl PuzzleGeometry {
                 orbits.push(vec![piece]);
             }
 
-            let orbits: Arc<[Box<[PieceData]>]> = 
-                orbits
-                    .into_iter()
-                    .map(|v| {
-                        v.into_iter().map(|v| PieceData { stickers: v.into() }).collect()
-                    })
-                    .collect();
+            for orbit in &mut orbits {
+                // Sort lexicographically by the stickers second
+                orbit.sort_unstable();
+                // Sort by centroid first (note that dividing by the number of stickers doesn't affect the sorted order)
+                orbit.sort_by_cached_key(|v| {
+                    ComparablePoint(
+                        v.iter()
+                            .map(|idx| non_fixed_stickers[*idx].0.centroid())
+                            .sum::<Vector<3>>(),
+                    )
+                });
+            }
+
+            let orbits: Arc<[Box<[PieceData]>]> = orbits
+                .into_iter()
+                .map(|v| {
+                    v.into_iter()
+                        .map(|v| PieceData { stickers: v.into() })
+                        .collect()
+                })
+                .collect();
 
             let (facelet_orientation_numbers, orientation_counts) =
                 Self::number_facelet_orientations(&group, &sticker_orbits, &orbits);
@@ -503,12 +518,15 @@ impl PuzzleGeometry {
 
             moves.sort_by(|a, b| turn_compare(a.name(), b.name()));
 
-            (Arc::new(KSolve {
-                name: self.definition.to_string(),
-                sets,
-                moves,
-                symmetries: Vec::new(),
-            }), orbits)
+            (
+                Arc::new(KSolve {
+                    name: self.definition.to_string(),
+                    sets,
+                    moves,
+                    symmetries: Vec::new(),
+                }),
+                orbits,
+            )
         })
     }
 }
@@ -782,6 +800,21 @@ fn turn_compare(a: &str, b: &str) -> Ordering {
     }
 }
 
+#[derive(PartialEq, Eq)]
+struct ComparablePoint(Vector<3>);
+
+impl Ord for ComparablePoint {
+    fn cmp(&self, other: &Self) -> Ordering {
+        point_compare(&self.0, &other.0)
+    }
+}
+
+impl PartialOrd for ComparablePoint {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
 /// Sort all of the faces from top-to-bottom first, counter-clockwise second, and in-to-out third.
 fn point_compare(a: &Vector<3>, b: &Vector<3>) -> Ordering {
     fn region(x: &Num, z: &Num) -> u8 {
@@ -838,7 +871,7 @@ mod tests {
         ksolve::KSolveMove,
         numbers::{Int, U},
         permutations::{Permutation, schreier_sims::StabilizerChain},
-        puzzle_geometry::parsing::puzzle,
+        puzzle_geometry::{PieceData, parsing::puzzle},
     };
 
     use super::{
@@ -1008,6 +1041,34 @@ mod tests {
         );
 
         // https://www.math.rwth-aachen.de/homes/GAP/WWW2/Doc/Examples/rubik.html
+        /*
+          (Copied from the website for reference, with indices changed to be zero indexed)
+                       +--------------+
+                       |              |
+                       |  0    1    2 |
+                       |              |
+                       |  3  top    4 |
+                       |              |
+                       |  5    6    7 |
+                       |              |
+        +--------------+--------------+--------------+--------------+
+        |              |              |              |              |
+        |  8    9   10 | 16   17   18 | 24   25   26 | 32   33   34 |
+        |              |              |              |              |
+        | 11  left  12 | 19 front  20 | 27 right  28 | 35  rear  36 |
+        |              |              |              |              |
+        | 13   14   15 | 21   22   23 | 29   30   31 | 37   38   39 |
+        |              |              |              |              |
+        +--------------+--------------+--------------+--------------+
+                       |              |
+                       | 40   41   42 |
+                       |              |
+                       | 43 bottom 44 |
+                       |              |
+                       | 45   46   47 |
+                       |              |
+                       +--------------+
+          */
         assert_eq!(
             group.get_generator("U").unwrap(),
             &Permutation::from_cycles(vec![
@@ -1066,6 +1127,37 @@ mod tests {
                 vec![13, 21, 29, 37],
                 vec![14, 22, 30, 38],
                 vec![15, 23, 31, 39]
+            ])
+        );
+
+        assert_eq!(
+            geometry
+                .piece_info()
+                .iter()
+                .cloned()
+                .collect::<HashSet<_>>(),
+            HashSet::from([
+                Box::from(
+                    [
+                        [5, 10, 16],
+                        [7, 18, 24],
+                        [2, 26, 32],
+                        [0, 8, 34],
+                        [15, 21, 40],
+                        [23, 29, 42],
+                        [31, 37, 47],
+                        [13, 39, 45]
+                    ]
+                    .map(|v| PieceData { stickers: v.into() })
+                ),
+                Box::from(
+                    [
+                        [3, 9], [6, 17], [4, 25], [1, 33],
+                        [12, 19], [20, 27], [28, 35], [11, 36],
+                        [14, 43], [22, 41], [30, 44], [38, 46],
+                    ]
+                    .map(|v| PieceData { stickers: v.into() })
+                ),
             ])
         );
 
