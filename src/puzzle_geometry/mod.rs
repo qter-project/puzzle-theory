@@ -1,9 +1,5 @@
 use std::{
-    cmp::{Ordering, Reverse},
-    collections::{BTreeSet, HashMap},
-    mem,
-    num::NonZeroU16,
-    sync::{Arc, OnceLock},
+    cell::OnceCell, cmp::{Ordering, Reverse}, collections::{BTreeSet, HashMap}, mem, num::NonZeroU16, sync::{Arc, OnceLock}
 };
 
 use crate::{
@@ -390,6 +386,7 @@ impl PuzzleGeometry {
         self.ksolve_data.get_or_init(|| {
             let group = self.permutation_group();
 
+            // Calculate the orbits of the stickers
             let mut sticker_orbits = UnionFind::<()>::new(group.facelet_count());
 
             for (_, generator) in group.generators() {
@@ -398,6 +395,7 @@ impl PuzzleGeometry {
                 }
             }
 
+            // Calculate pieces by which sides of cuts stickers are on
             let mut pieces: HashMap<Vec<ArcIntern<str>>, Vec<usize>> = HashMap::new();
 
             let non_fixed_stickers = self.non_fixed_stickers();
@@ -408,43 +406,62 @@ impl PuzzleGeometry {
                     .push(sticker);
             }
 
-            let mut orbits: Vec<Vec<Vec<usize>>> = Vec::new();
+            // Separate pieces into orbits
+            let mut orbits: Vec<(Vec<Vec<usize>>, OnceCell<Num>)> = Vec::new();
 
             'next_piece: for (_, piece) in pieces {
                 let orbit_rep = sticker_orbits.find(piece[0]).root_idx();
                 for maybe_orbit in &mut orbits {
-                    if maybe_orbit[0].len() != piece.len() {
+                    if maybe_orbit.0[0].len() != piece.len() {
                         continue;
                     }
 
-                    for facelet in &maybe_orbit[0] {
+                    for facelet in &maybe_orbit.0[0] {
                         if sticker_orbits.find(*facelet).root_idx() == orbit_rep {
-                            maybe_orbit.push(piece);
+                            maybe_orbit.0.push(piece);
                             continue 'next_piece;
                         }
                     }
                 }
 
-                orbits.push(vec![piece]);
+                orbits.push((vec![piece], OnceCell::new()));
             }
 
+            // Sort the pieces in each orbit
             for orbit in &mut orbits {
-                // Sort lexicographically by the stickers second
-                orbit.sort_unstable();
-                // Sort by centroid first (note that dividing by the number of stickers doesn't affect the sorted order)
-                orbit.sort_by_cached_key(|v| {
-                    ComparablePoint(
+                // Sort by centroid (note that dividing by the number of stickers doesn't affect the sorted order) then by the first sticker. Since stickers are unique, this always breaks ties.
+                orbit.0.sort_by_cached_key(|v| {
+                    (ComparablePoint(
                         v.iter()
                             .map(|idx| non_fixed_stickers[*idx].0.centroid())
                             .sum::<Vector<3>>(),
-                    )
+                    ), v[0])
                 });
             }
+
+            let orbit_dist = |orbit: &[Vec<usize>]| {
+                orbit.iter().flatten().map(|v| non_fixed_stickers[*v].0.centroid().norm_squared()).sum::<Num>()
+            };
+
+            // Sort the orbits by (piece count, stickers per piece, distance from center, first sticker in first piece)
+            // Note that if we ever have to calculate the distance from center, the orbits have the same number of stickers so dividing by them to get the average has no effect on the comparison. We're also using the norm squared for performance.
+            orbits.sort_unstable_by(|(a, dist1), (b, dist2)| {
+                match a.len().cmp(&b.len()) {
+                    Ordering::Equal => match a[0].len().cmp(&b[0].len()) {
+                        Ordering::Equal => match dist1.get_or_init(|| orbit_dist(a)).cmp(dist2.get_or_init(|| orbit_dist(b))) {
+                            Ordering::Equal => a[0][0].cmp(&b[0][0]),
+                            v => v,
+                        },
+                        v => v,
+                    },
+                    v => v,
+                }
+            });
 
             let orbits: Arc<[Box<[PieceData]>]> = orbits
                 .into_iter()
                 .map(|v| {
-                    v.into_iter()
+                    v.0.into_iter()
                         .map(|v| PieceData { stickers: v.into() })
                         .collect()
                 })
@@ -1131,12 +1148,9 @@ mod tests {
         );
 
         assert_eq!(
-            geometry
-                .piece_info()
-                .iter()
-                .cloned()
-                .collect::<HashSet<_>>(),
-            HashSet::from([
+            &*geometry
+                .piece_info(),
+            &[
                 Box::from(
                     [
                         [5, 10, 16],
@@ -1158,7 +1172,7 @@ mod tests {
                     ]
                     .map(|v| PieceData { stickers: v.into() })
                 ),
-            ])
+            ]
         );
 
         let ksolve = geometry.ksolve();
