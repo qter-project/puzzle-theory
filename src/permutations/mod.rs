@@ -172,6 +172,12 @@ impl core::fmt::Debug for Permutation {
 }
 
 impl Permutation {
+    /// Create a permutation that represents the do-nothing permutation.
+    #[must_use] 
+    pub fn identity() -> Permutation {
+        Self::from_mapping(Vec::new())
+    }
+    
     /// Create a permutation using mapping notation. `mapping` is a list of facelet indices where the index is the facelet and the value is the facelet it permutes to.
     ///
     /// # Panics

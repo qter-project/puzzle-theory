@@ -1,4 +1,3 @@
-
 use std::{
     cmp::{Ordering, Reverse},
     collections::{BTreeSet, HashMap},
@@ -8,7 +7,10 @@ use std::{
 };
 
 use crate::{
-    ksolve::{KSolve, KSolveMove, KSolveSet}, permutations::{Permutation, PermutationGroup}, span::Span, union_find::UnionFind
+    ksolve::{KSolve, KSolveMove, KSolveSet},
+    permutations::{Permutation, PermutationGroup},
+    span::Span,
+    union_find::UnionFind,
 };
 use edge_cloud::EdgeCloud;
 use internment::ArcIntern;
@@ -23,8 +25,8 @@ mod edge_cloud;
 mod exact_trig;
 pub mod knife;
 pub mod num;
-pub mod shapes;
 pub mod parsing;
+pub mod shapes;
 
 // Note... X is left to right, Y is down to up, and Z is forwards to backwards
 // The coordinate system is right-handed
@@ -196,9 +198,23 @@ pub struct PuzzleGeometry {
     stickers: Vec<(Face, Vec<ArcIntern<str>>)>,
     turns: HashMap<ArcIntern<str>, (Vector<3>, Matrix<3, 3>, usize)>,
     definition: Span,
-    perm_group: OnceLock<(Arc<PermutationGroup>, BTreeSet<usize>)>,
+    perm_group_data: OnceLock<(Arc<PermutationGroup>, BTreeSet<usize>)>,
     non_fixed_stickers: OnceLock<Vec<(Face, Vec<ArcIntern<str>>)>>,
-    ksolve: OnceLock<Arc<KSolve>>,
+    ksolve_data: OnceLock<(Arc<KSolve>, Arc<[Box<[PieceData]>]>)>,
+}
+
+/// Data about an individual piece of the twisty puzzle
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct PieceData {
+    stickers: Box<[usize]>,
+}
+
+impl PieceData {
+    /// Get the individual stickers that belong to this piece. These are indices of `PuzzleGeometry::non_fixed_stickers`.
+    #[must_use] 
+    pub fn stickers(&self) -> &[usize] {
+        &self.stickers
+    }
 }
 
 impl PuzzleGeometry {
@@ -208,7 +224,7 @@ impl PuzzleGeometry {
     }
 
     fn calc_permutation_group(&self) -> &(Arc<PermutationGroup>, BTreeSet<usize>) {
-        self.perm_group.get_or_init(|| {
+        self.perm_group_data.get_or_init(|| {
             let clouds = self.stickers()
                 .iter()
                 .map(|v| v.0.edge_cloud())
@@ -288,13 +304,18 @@ impl PuzzleGeometry {
         })
     }
 
+    /// Returns a list of orbits where each orbit is a list of pieces in each orbit.
+    pub fn piece_info(&self) -> Arc<[Box<[PieceData]>]> {
+        Arc::clone(&self.calc_ksolve_data().1)
+    }
+
     /// Returns the orientation number for each sticker as well as the orientation count for each orbit. The way the algorithm works, you get both numbers.
     ///
     /// Assigns signature facelets in an unspecified but consistent way
     fn number_facelet_orientations(
         group: &PermutationGroup,
         sticker_orbits: &UnionFind<()>,
-        orbits: &[Vec<Vec<usize>>],
+        orbits: &[Box<[PieceData]>],
     ) -> (Vec<usize>, Vec<usize>) {
         let mut facelet_orientation_numbers: Vec<Option<usize>> = vec![None; group.facelet_count()];
         let mut orientation_counts = Vec::new();
@@ -304,7 +325,7 @@ impl PuzzleGeometry {
             let piece = &orbit[0];
             let mut reps_to_count = HashMap::new();
 
-            for i in piece {
+            for i in &piece.stickers {
                 let rep = sticker_orbits.find(*i).root_idx();
                 let value = reps_to_count.entry(rep).or_insert(0);
                 facelet_orientation_numbers[*i] = Some(*value);
@@ -357,16 +378,16 @@ impl PuzzleGeometry {
     }
 
     /// Get the puzzle in its `KSolve` representation
-    ///
-    /// # Panics
-    ///
-    /// May panic if calculated numbers fall outside of the bit width of the fields of `KSolve`
-    #[must_use]
     pub fn ksolve(&self) -> Arc<KSolve> {
+        Arc::clone(&self.calc_ksolve_data().0)
+    }
+    
+    #[must_use]
+    fn calc_ksolve_data(&self) -> &(Arc<KSolve>, Arc<[Box<[PieceData]>]>) {
         // Note: the KSolve permutation vector is **1-indexed**. See the test
         // cases for examples. It also exposes `zero_indexed_transformation` as
         // a convenience method.
-        Arc::clone(self.ksolve.get_or_init(|| {
+        self.ksolve_data.get_or_init(|| {
             let group = self.permutation_group();
 
             let mut sticker_orbits = UnionFind::<()>::new(group.facelet_count());
@@ -406,6 +427,14 @@ impl PuzzleGeometry {
                 orbits.push(vec![piece]);
             }
 
+            let orbits: Arc<[Box<[PieceData]>]> = 
+                orbits
+                    .into_iter()
+                    .map(|v| {
+                        v.into_iter().map(|v| PieceData { stickers: v.into() }).collect()
+                    })
+                    .collect();
+
             let (facelet_orientation_numbers, orientation_counts) =
                 Self::number_facelet_orientations(&group, &sticker_orbits, &orbits);
 
@@ -430,9 +459,9 @@ impl PuzzleGeometry {
 
             let mut sticker_to_piece_mapping = vec![0; group.facelet_count()];
 
-            for orbit in &orbits {
+            for orbit in &*orbits {
                 for (piece_idx, piece) in orbit.iter().enumerate() {
-                    for i in piece {
+                    for i in &piece.stickers {
                         sticker_to_piece_mapping[*i] = piece_idx;
                     }
                 }
@@ -445,9 +474,9 @@ impl PuzzleGeometry {
                     let mut this_orbit_transform = Vec::new();
 
                     for piece in orbit {
-                        let first_one_goes_to = perm.mapping()[piece[0]];
+                        let first_one_goes_to = perm.mapping()[piece.stickers[0]];
 
-                        let starting_orientation = facelet_orientation_numbers[piece[0]];
+                        let starting_orientation = facelet_orientation_numbers[piece.stickers[0]];
                         let new_orientation = facelet_orientation_numbers[first_one_goes_to];
                         // Add ori_count first to prevent wraparound from subtraction
                         let extra_orientation = (ori_count + new_orientation
@@ -474,13 +503,13 @@ impl PuzzleGeometry {
 
             moves.sort_by(|a, b| turn_compare(a.name(), b.name()));
 
-            Arc::new(KSolve {
+            (Arc::new(KSolve {
                 name: self.definition.to_string(),
                 sets,
                 moves,
                 symmetries: Vec::new(),
-            })
-        }))
+            }), orbits)
+        })
     }
 }
 
@@ -677,8 +706,8 @@ impl PuzzleGeometryDefinition {
             stickers,
             turns,
             definition: self.definition,
-            perm_group: OnceLock::new(),
-            ksolve: OnceLock::new(),
+            perm_group_data: OnceLock::new(),
+            ksolve_data: OnceLock::new(),
             non_fixed_stickers: OnceLock::new(),
         })
     }
@@ -805,13 +834,17 @@ fn point_compare(a: &Vector<3>, b: &Vector<3>) -> Ordering {
 mod tests {
     use std::{cmp::Ordering, collections::HashSet};
 
-    use crate::{ksolve::KSolveMove, numbers::{Int, U}, permutations::{Permutation, schreier_sims::StabilizerChain}, puzzle_geometry::parsing::puzzle};
+    use crate::{
+        ksolve::KSolveMove,
+        numbers::{Int, U},
+        permutations::{Permutation, schreier_sims::StabilizerChain},
+        puzzle_geometry::parsing::puzzle,
+    };
 
     use super::{
         Face, Point, PuzzleGeometryError,
         num::{Num, Vector},
-        point_compare,
-        turn_compare, turn_names,
+        point_compare, turn_compare, turn_names,
     };
     use internment::ArcIntern;
     use itertools::Itertools;
@@ -958,7 +991,7 @@ mod tests {
     #[test]
     fn three_by_three() {
         let geometry = puzzle("3x3");
-        
+
         assert_eq!(geometry.stickers().len(), 54);
 
         for turn in &geometry.turns {
