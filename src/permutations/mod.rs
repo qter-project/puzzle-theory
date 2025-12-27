@@ -1,6 +1,5 @@
 use std::{
-    collections::HashMap,
-    sync::{Arc, OnceLock},
+    collections::HashMap, hash::Hash, sync::{Arc, OnceLock}
 };
 
 use internment::ArcIntern;
@@ -346,6 +345,14 @@ impl Permutation {
 impl PartialEq for Permutation {
     fn eq(&self, other: &Self) -> bool {
         self.minimal_mapping() == other.minimal_mapping()
+    }
+}
+
+impl Eq for Permutation {}
+
+impl Hash for Permutation {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.minimal_mapping().hash(state);
     }
 }
 

@@ -13,6 +13,8 @@
 
 ## PuzzleGeometry
 
+- Canonical signature facelet choosing
+  - Optimal in a meaningful sense
 - ⭐Detect identical pieces
 - ⭐Implement better face cutting algorithm
 - ⭐Calculate orientation and parity constraints of the puzzle

@@ -14,8 +14,17 @@ impl StabilizerChain {
     /// Create a new stabilizer chain from the permutation group using the Schreier-Sims algorithm.
     #[must_use]
     pub fn new(group: &Arc<PermutationGroup>) -> StabilizerChain {
-        let mut stabilizers =
-            Stabilizer::new(Arc::clone(group), &(0..group.facelet_count()).collect_vec());
+        Self::new_with_chain(group, &(0..group.facelet_count()).collect_vec())
+    }
+
+    /// Create a new stabilizer chain from the permutation group with the stickers being stabilized in the given order. It is a logic error for any stickers to be left out of the chain or duplicated.
+    ///
+    /// # Panics
+    ///
+    /// Panics if any elements of `chain` are out of range for the size of the permutation group.
+    #[must_use] 
+    pub fn new_with_chain(group: &Arc<PermutationGroup>, chain: &[usize]) -> StabilizerChain {
+        let mut stabilizers = Stabilizer::new(Arc::clone(group), chain);
 
         for (_, perm) in group.generators() {
             stabilizers.extend(perm.to_owned());
@@ -34,6 +43,14 @@ impl StabilizerChain {
     #[must_use]
     pub fn cardinality(&self) -> Int<U> {
         self.stabilizers.cardinality()
+    }
+
+    /// Return the sequence of inverse coset representatives from each stabilizer in the chain that when composed together, inverts the permutation. If the input is not a member of the group, the sequence will be cut short once the algorithm can recognize that.
+    #[must_use]
+    pub fn solution(&self, permutation: Permutation) -> Vec<&Permutation> {
+        let mut soln = self.stabilizers.solution(permutation);
+        soln.reverse();
+        soln
     }
 }
 
@@ -72,24 +89,17 @@ impl Stabilizer {
 
     #[must_use]
     fn is_member(&self, mut permutation: Permutation) -> bool {
-        // println!("{} — {}", self.stabilizes, permutation);
-        loop {
-            let rep = permutation
-                .mapping()
-                .get(self.stabilizes)
-                .copied()
-                .unwrap_or(self.stabilizes);
+        let rep = permutation
+            .mapping()
+            .get(self.stabilizes)
+            .copied()
+            .unwrap_or(self.stabilizes);
 
-            if rep == self.stabilizes {
-                break;
-            }
+        let Some(other_perm) = &self.coset_reps[rep] else {
+            return false;
+        };
 
-            let Some(other_perm) = &self.coset_reps[rep] else {
-                return false;
-            };
-
-            permutation.compose_into(other_perm);
-        }
+        permutation.compose_into(other_perm);
 
         match &self.next {
             Some(next) => next.is_member(permutation),
@@ -97,25 +107,46 @@ impl Stabilizer {
         }
     }
 
-    fn inverse_rep_to(&self, mut rep: usize, alg: &mut Permutation) -> Result<(), ()> {
-        while rep != self.stabilizes {
-            let Some(other_alg) = &self.coset_reps[rep] else {
-                return Err(());
-            };
+    /// Returns the solution backwards for efficiency
+    #[must_use]
+    fn solution(&self, mut permutation: Permutation) -> Vec<&Permutation> {
+        let rep = permutation
+            .mapping()
+            .get(self.stabilizes)
+            .copied()
+            .unwrap_or(self.stabilizes);
 
-            alg.compose_into(other_alg);
-            rep = other_alg.mapping()[rep];
+        let Some(other_perm) = &self.coset_reps[rep] else {
+            return Vec::new();
+        };
+
+        permutation.compose_into(other_perm);
+
+        match &self.next {
+            Some(next) => {
+                let mut soln = next.solution(permutation);
+                soln.push(other_perm);
+                soln
+            },
+            None => vec![other_perm],
         }
+    }
+
+    fn inverse_rep_to(&self, rep: usize, alg: &mut Permutation) -> Result<(), ()> {
+        let Some(other_alg) = &self.coset_reps[rep] else {
+            return Err(());
+        };
+
+        alg.compose_into(other_alg);
 
         Ok(())
     }
 
     fn extend(&mut self, generator: Permutation) {
+        // Early quit if this new generator doesn't add anything new to the group
         if self.is_member(generator.clone()) {
-            // TODO: Check if the generator is shorter than the ones we already have
             return;
         }
-        // println!("{} {generator:?}", self.stabilizes);
 
         self.generating_set.push(generator);
         let generator = self.generating_set.last().unwrap();
@@ -124,24 +155,28 @@ impl Stabilizer {
         let mut inv = generator.clone();
         inv.exponentiate(-Int::<I>::one());
 
-        // TODO: Some kind of SSSP thing to make these coset reps as short as possible
+        // Find stickers that are made newly in orbit by this generator; this only does the first level of BFS
         let mut newly_in_orbit = VecDeque::new();
 
         for i in 0..self.coset_reps.len() {
-            if self.coset_reps[i].is_some()
+            if let Some(prev_inv_rep) = &self.coset_reps[i]
                 && self.coset_reps[mapping.get(i).copied().unwrap_or(i)].is_none()
             {
-                self.coset_reps[mapping[i]] = Some(inv.clone());
+                let mut inv_rep = inv.clone();
+                inv_rep.compose_into(prev_inv_rep);
+                self.coset_reps[mapping[i]] = Some(inv_rep);
                 newly_in_orbit.push_back(mapping[i]);
             }
         }
 
+        // Complete the BFS and find everything new in orbit
         while let Some(spot) = newly_in_orbit.pop_front() {
             for perm in &self.generating_set {
                 let goes_to = perm.mapping().get(spot).copied().unwrap_or(spot);
                 if self.coset_reps[goes_to].is_none() {
                     let mut inv_alg = perm.clone();
                     inv_alg.exponentiate(-Int::<I>::one());
+                    inv_alg.compose_into(self.coset_reps[spot].as_ref().unwrap());
                     self.coset_reps[goes_to] = Some(inv_alg);
                     newly_in_orbit.push_back(goes_to);
                 }
@@ -152,6 +187,7 @@ impl Stabilizer {
             return;
         }
 
+        // Sift new generators down the chain
         for i in 0..self.coset_reps.len() {
             let mut rep = self.group.identity();
             let Ok(()) = self.inverse_rep_to(i, &mut rep) else {
@@ -179,7 +215,8 @@ mod tests {
 
     use crate::{
         numbers::{Int, U},
-        permutations::{Algorithm, Permutation, PermutationGroup}, puzzle_geometry::parsing::puzzle,
+        permutations::{Algorithm, Permutation, PermutationGroup},
+        puzzle_geometry::parsing::puzzle,
     };
 
     use super::StabilizerChain;

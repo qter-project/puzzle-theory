@@ -1,10 +1,15 @@
 use std::{
-    cell::OnceCell, cmp::{Ordering, Reverse}, collections::{BTreeSet, HashMap}, mem, num::NonZeroU16, sync::{Arc, OnceLock}
+    cell::OnceCell,
+    cmp::{Ordering, Reverse},
+    collections::{BTreeSet, HashMap},
+    mem,
+    num::NonZeroU16,
+    sync::{Arc, OnceLock},
 };
 
 use crate::{
     ksolve::{KSolve, KSolveMove, KSolveSet},
-    permutations::{Permutation, PermutationGroup},
+    permutations::{Permutation, PermutationGroup, schreier_sims::StabilizerChain},
     span::Span,
     union_find::UnionFind,
 };
@@ -203,6 +208,7 @@ pub struct PuzzleGeometry {
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct PieceData {
     stickers: Box<[usize]>,
+    twist: Permutation,
 }
 
 impl PieceData {
@@ -210,6 +216,12 @@ impl PieceData {
     #[must_use]
     pub fn stickers(&self) -> &[usize] {
         &self.stickers
+    }
+
+    /// Get the permutation that twists this piece in place, incrementing the orientation state by one.
+    #[must_use]
+    pub fn twist(&self) -> &Permutation {
+        &self.twist
     }
 }
 
@@ -305,34 +317,65 @@ impl PuzzleGeometry {
         Arc::clone(&self.calc_ksolve_data().1)
     }
 
-    /// Returns the orientation number for each sticker as well as the orientation count for each orbit. The way the algorithm works, you get both numbers.
+    /// Returns the orientation number for each sticker and the orientation count for each orbit.
     ///
     /// Assigns signature facelets in an unspecified but consistent way
     fn number_facelet_orientations(
-        group: &PermutationGroup,
+        group: &Arc<PermutationGroup>,
         sticker_orbits: &UnionFind<()>,
-        orbits: &[Box<[PieceData]>],
+        orbits: &[(Vec<Vec<usize>>, OnceCell<Num>)],
     ) -> (Vec<usize>, Vec<usize>) {
         let mut facelet_orientation_numbers: Vec<Option<usize>> = vec![None; group.facelet_count()];
         let mut orientation_counts = Vec::new();
 
         for orbit in orbits {
             // Number the very first piece arbitrarily
-            let piece = &orbit[0];
-            let mut reps_to_count = HashMap::new();
+            let piece = &orbit.0[0];
 
-            for i in &piece.stickers {
-                let rep = sticker_orbits.find(*i).root_idx();
-                let value = reps_to_count.entry(rep).or_insert(0);
-                facelet_orientation_numbers[*i] = Some(*value);
-                *value += 1;
+            let mut chain = (0..group.facelet_count()).collect_vec();
+            chain.swap(0, piece[0]);
+
+            // Create a stabilizer chain that will let us ensure that a "twist" is physically realizable as opposed to an arbitrary permutation of stickers
+            let stabchain = StabilizerChain::new_with_chain(group, &chain);
+            let orbit_reps = piece
+                .iter()
+                .unique_by(|v| sticker_orbits.find(**v).root_idx())
+                .collect::<Vec<_>>();
+            let ori_count = piece.len() / orbit_reps.len();
+
+            if ori_count == 1 {
+                for item in piece {
+                    facelet_orientation_numbers[*item] = Some(0);
+                }
+            } else {
+                let cycles = piece
+                    .iter()
+                    .skip(1)
+                    .filter_map(|v| {
+                        stabchain
+                            .solution(Permutation::from_cycles(vec![vec![piece[0], *v]]))
+                            .into_iter()
+                            .next()
+                    })
+                    .map(|v| {
+                        v.cycles()
+                            .iter()
+                            .filter(|v| orbit_reps.iter().any(|rep| v.contains(rep)))
+                            .collect::<Vec<_>>()
+                    })
+                    .find(|v| !v.is_empty() && v[0].len() == ori_count)
+                    .unwrap();
+
+                // TODO: Filter to ensure twists go clockwise or not secretly be two twists etc
+
+                for cycle in cycles {
+                    for (i, item) in cycle.iter().enumerate() {
+                        facelet_orientation_numbers[*item] = Some(i);
+                    }
+                }
             }
 
-            let ori_count = reps_to_count
-                .values()
-                .all_equal_value()
-                .expect("All values to be equal");
-            orientation_counts.push(*ori_count);
+            orientation_counts.push(ori_count);
 
             // Number all of the pieces such that orientation is invariant over as many turns as possible
 
@@ -431,44 +474,68 @@ impl PuzzleGeometry {
             for orbit in &mut orbits {
                 // Sort by centroid (note that dividing by the number of stickers doesn't affect the sorted order) then by the first sticker. Since stickers are unique, this always breaks ties.
                 orbit.0.sort_by_cached_key(|v| {
-                    (ComparablePoint(
-                        v.iter()
-                            .map(|idx| non_fixed_stickers[*idx].0.centroid())
-                            .sum::<Vector<3>>(),
-                    ), v[0])
+                    (
+                        ComparablePoint(
+                            v.iter()
+                                .map(|idx| non_fixed_stickers[*idx].0.centroid())
+                                .sum::<Vector<3>>(),
+                        ),
+                        v[0],
+                    )
                 });
             }
 
             let orbit_dist = |orbit: &[Vec<usize>]| {
-                orbit.iter().flatten().map(|v| non_fixed_stickers[*v].0.centroid().norm_squared()).sum::<Num>()
+                orbit
+                    .iter()
+                    .flatten()
+                    .map(|v| non_fixed_stickers[*v].0.centroid().norm_squared())
+                    .sum::<Num>()
             };
 
             // Sort the orbits by (piece count, stickers per piece, distance from center, first sticker in first piece)
             // Note that if we ever have to calculate the distance from center, the orbits have the same number of stickers so dividing by them to get the average has no effect on the comparison. We're also using the norm squared for performance.
-            orbits.sort_unstable_by(|(a, dist1), (b, dist2)| {
-                match a.len().cmp(&b.len()) {
-                    Ordering::Equal => match a[0].len().cmp(&b[0].len()) {
-                        Ordering::Equal => match dist1.get_or_init(|| orbit_dist(a)).cmp(dist2.get_or_init(|| orbit_dist(b))) {
-                            Ordering::Equal => a[0][0].cmp(&b[0][0]),
-                            v => v,
-                        },
+            orbits.sort_unstable_by(|(a, dist1), (b, dist2)| match a.len().cmp(&b.len()) {
+                Ordering::Equal => match a[0].len().cmp(&b[0].len()) {
+                    Ordering::Equal => match dist1
+                        .get_or_init(|| orbit_dist(a))
+                        .cmp(dist2.get_or_init(|| orbit_dist(b)))
+                    {
+                        Ordering::Equal => a[0][0].cmp(&b[0][0]),
                         v => v,
                     },
                     v => v,
-                }
+                },
+                v => v,
             });
+
+            let (facelet_orientation_numbers, orientation_counts) =
+                Self::number_facelet_orientations(&group, &sticker_orbits, &orbits);
 
             let orbits: Arc<[Box<[PieceData]>]> = orbits
                 .into_iter()
                 .map(|v| {
                     v.0.into_iter()
-                        .map(|v| PieceData { stickers: v.into() })
+                        .map(|v| {
+                            let cycles = v
+                                .iter()
+                                .into_grouping_map_by(|v| sticker_orbits.find(**v).root_idx())
+                                .collect::<Vec<usize>>()
+                                .into_values()
+                                .map(|mut v| {
+                                    v.sort_unstable_by_key(|idx| facelet_orientation_numbers[*idx]);
+                                    v
+                                })
+                                .collect::<Vec<_>>();
+
+                            PieceData {
+                                stickers: v.into(),
+                                twist: Permutation::from_cycles(cycles),
+                            }
+                        })
                         .collect()
                 })
                 .collect();
-
-            let (facelet_orientation_numbers, orientation_counts) =
-                Self::number_facelet_orientations(&group, &sticker_orbits, &orbits);
 
             let mut sets: Vec<KSolveSet> = Vec::new();
 
@@ -1147,30 +1214,55 @@ mod tests {
             ])
         );
 
+        let piece_info = &*geometry.piece_info();
         assert_eq!(
-            &*geometry
-                .piece_info(),
+            piece_info,
             &[
+                [
+                    ([5, 10, 16], [5, 16, 10]),
+                    ([7, 18, 24], [7, 24, 18]),
+                    ([2, 26, 32], [2, 32, 26]),
+                    ([0, 8, 34], [34, 0, 8]),
+                    ([15, 21, 40], [15, 21, 40]),
+                    ([23, 29, 42], [23, 29, 42]),
+                    ([31, 37, 47], [31, 37, 47]),
+                    ([13, 39, 45], [13, 45, 39]),
+                ]
+                .into_iter()
+                .enumerate()
+                .map(|(i, (v, _))| {
+                    // TODO: Make this testcase not pull arbitrary values once we can guarantee that twists are always clockwise.
+                    let twist = piece_info[0][i].twist().clone();
+                    assert_eq!(twist.cycles().len(), 1);
+                    assert_eq!(twist.cycles()[0].len(), 3);
+                    assert_eq!(twist.cycles()[0].iter().copied().sorted().collect_vec(), v);
+
+                    PieceData {
+                        stickers: v.into(),
+                        // twist: Permutation::from_cycles(vec![t.into()])
+                        twist,
+                    }
+                })
+                .collect::<Box<[_]>>(),
                 Box::from(
                     [
-                        [5, 10, 16],
-                        [7, 18, 24],
-                        [2, 26, 32],
-                        [0, 8, 34],
-                        [15, 21, 40],
-                        [23, 29, 42],
-                        [31, 37, 47],
-                        [13, 39, 45]
+                        [3, 9],
+                        [6, 17],
+                        [4, 25],
+                        [1, 33],
+                        [12, 19],
+                        [20, 27],
+                        [28, 35],
+                        [11, 36],
+                        [14, 43],
+                        [22, 41],
+                        [30, 44],
+                        [38, 46],
                     ]
-                    .map(|v| PieceData { stickers: v.into() })
-                ),
-                Box::from(
-                    [
-                        [3, 9], [6, 17], [4, 25], [1, 33],
-                        [12, 19], [20, 27], [28, 35], [11, 36],
-                        [14, 43], [22, 41], [30, 44], [38, 46],
-                    ]
-                    .map(|v| PieceData { stickers: v.into() })
+                    .map(|v| PieceData {
+                        stickers: v.into(),
+                        twist: Permutation::from_cycles(vec![v.into()])
+                    })
                 ),
             ]
         );
