@@ -1,3 +1,4 @@
+use std::sync::LazyLock;
 use std::{collections::VecDeque, option::Option, sync::Arc};
 
 use itertools::Itertools;
@@ -5,6 +6,9 @@ use itertools::Itertools;
 use crate::permutations::{Permutation, PermutationGroup};
 
 use crate::numbers::{I, Int, U};
+use crate::union_find::{Cardinality, UnionFind};
+
+static IDENTITY: LazyLock<Permutation> = LazyLock::new(Permutation::identity);
 
 pub struct StabilizerChain {
     stabilizers: Stabilizer,
@@ -54,33 +58,29 @@ impl StabilizerChain {
     }
 }
 
-#[derive(Debug)]
 struct Stabilizer {
     group: Arc<PermutationGroup>,
     next: Option<Box<Stabilizer>>,
     stabilizes: usize,
     generating_set: Vec<Permutation>,
-    coset_reps: Box<[Option<Permutation>]>,
+    coset_reps: UnionFind<Cardinality, Permutation>,
 }
 
 impl Stabilizer {
     fn new(group: Arc<PermutationGroup>, chain: &[usize]) -> Stabilizer {
         let (head, tail) = chain.split_first().unwrap();
 
-        let mut coset_reps = Box::<[_]>::from(vec![None; group.facelet_count()]);
-        coset_reps[*head] = Some(group.identity());
-
         Stabilizer {
             stabilizes: *head,
             next: (!tail.is_empty()).then(|| Box::new(Stabilizer::new(Arc::clone(&group), tail))),
-            coset_reps,
+            coset_reps: UnionFind::new(group.facelet_count()),
             generating_set: Vec::new(),
             group,
         }
     }
 
     fn cardinality(&self) -> Int<U> {
-        let mut cardinality = Int::from(self.coset_reps.iter().filter(|v| v.is_some()).count());
+        let mut cardinality = Int::from(self.coset_reps.find(self.stabilizes).set_meta().0);
         if let Some(next) = &self.next {
             cardinality *= next.cardinality();
         }
@@ -95,11 +95,15 @@ impl Stabilizer {
             .copied()
             .unwrap_or(self.stabilizes);
 
-        let Some(other_perm) = &self.coset_reps[rep] else {
-            return false;
-        };
+        let find_info = self.coset_reps.find(rep);
 
-        permutation.compose_into(other_perm);
+        if find_info.root_idx() != self.stabilizes {
+            return false
+        }
+
+        if let Some(perm) = find_info.path_meta() {
+            permutation.compose_into(perm);
+        }
 
         match &self.next {
             Some(next) => next.is_member(permutation),
@@ -116,11 +120,17 @@ impl Stabilizer {
             .copied()
             .unwrap_or(self.stabilizes);
 
-        let Some(other_perm) = &self.coset_reps[rep] else {
-            return Vec::new();
-        };
+        let find_info = self.coset_reps.find(rep);
 
-        permutation.compose_into(other_perm);
+        if find_info.root_idx() != self.stabilizes {
+            return Vec::new();
+        }
+
+        if let Some(perm) = find_info.path_meta() {
+            permutation.compose_into(perm);
+        }
+
+        let other_perm = find_info.path_meta().unwrap_or_else(|| &IDENTITY);
 
         match &self.next {
             Some(next) => {
@@ -133,11 +143,15 @@ impl Stabilizer {
     }
 
     fn inverse_rep_to(&self, rep: usize, alg: &mut Permutation) -> Result<(), ()> {
-        let Some(other_alg) = &self.coset_reps[rep] else {
-            return Err(());
-        };
+        let find_info = self.coset_reps.find(rep);
 
-        alg.compose_into(other_alg);
+        if find_info.root_idx() != self.stabilizes {
+            return Err(());
+        }
+
+        if let Some(other_alg) = find_info.path_meta() {
+            alg.compose_into(other_alg);
+        }
 
         Ok(())
     }
@@ -158,13 +172,12 @@ impl Stabilizer {
         // Find stickers that are made newly in orbit by this generator; this only does the first level of BFS
         let mut newly_in_orbit = VecDeque::new();
 
-        for i in 0..self.coset_reps.len() {
-            if let Some(prev_inv_rep) = &self.coset_reps[i]
-                && self.coset_reps[mapping.get(i).copied().unwrap_or(i)].is_none()
+        for i in 0..self.group.facelet_count() {
+            if self.coset_reps.find(i).root_idx() == self.stabilizes
+                && self.coset_reps.find(mapping.get(i).copied().unwrap_or(i)).root_idx() != self.stabilizes
             {
-                let mut inv_rep = inv.clone();
-                inv_rep.compose_into(prev_inv_rep);
-                self.coset_reps[mapping[i]] = Some(inv_rep);
+                let inv_rep = inv.clone();
+                self.coset_reps.union(i, mapping[i], inv_rep);
                 newly_in_orbit.push_back(mapping[i]);
             }
         }
@@ -173,11 +186,10 @@ impl Stabilizer {
         while let Some(spot) = newly_in_orbit.pop_front() {
             for perm in &self.generating_set {
                 let goes_to = perm.mapping().get(spot).copied().unwrap_or(spot);
-                if self.coset_reps[goes_to].is_none() {
+                if self.coset_reps.find(goes_to).root_idx() != self.stabilizes {
                     let mut inv_alg = perm.clone();
                     inv_alg.exponentiate(-Int::<I>::one());
-                    inv_alg.compose_into(self.coset_reps[spot].as_ref().unwrap());
-                    self.coset_reps[goes_to] = Some(inv_alg);
+                    self.coset_reps.union(spot, goes_to, inv_alg);
                     newly_in_orbit.push_back(goes_to);
                 }
             }
@@ -188,7 +200,7 @@ impl Stabilizer {
         }
 
         // Sift new generators down the chain
-        for i in 0..self.coset_reps.len() {
+        for i in 0..self.group.facelet_count() {
             let mut rep = self.group.identity();
             let Ok(()) = self.inverse_rep_to(i, &mut rep) else {
                 continue;

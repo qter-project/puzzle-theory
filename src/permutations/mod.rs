@@ -170,6 +170,12 @@ impl core::fmt::Debug for Permutation {
     }
 }
 
+impl Default for Permutation {
+    fn default() -> Self {
+        Permutation::identity()
+    }
+}
+
 impl Permutation {
     /// Create a permutation that represents the do-nothing permutation.
     #[must_use] 

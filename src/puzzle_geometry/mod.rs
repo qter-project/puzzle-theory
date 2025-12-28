@@ -322,7 +322,7 @@ impl PuzzleGeometry {
     /// Assigns signature facelets in an unspecified but consistent way
     fn number_facelet_orientations(
         group: &Arc<PermutationGroup>,
-        sticker_orbits: &UnionFind<()>,
+        sticker_orbits: &UnionFind<(), ()>,
         orbits: &[(Vec<Vec<usize>>, OnceCell<Num>)],
     ) -> (Vec<usize>, Vec<usize>) {
         let mut facelet_orientation_numbers: Vec<Option<usize>> = vec![None; group.facelet_count()];
@@ -430,7 +430,7 @@ impl PuzzleGeometry {
             let group = self.permutation_group();
 
             // Calculate the orbits of the stickers
-            let mut sticker_orbits = UnionFind::<()>::new(group.facelet_count());
+            let mut sticker_orbits = UnionFind::<(), ()>::new(group.facelet_count());
 
             for (_, generator) in group.generators() {
                 for (a, b) in generator.mapping().iter().enumerate() {
