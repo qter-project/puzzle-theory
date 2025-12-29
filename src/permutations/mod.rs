@@ -80,17 +80,6 @@ impl PermutationGroup {
         &self.facelet_colors
     }
 
-    /// The identity/solved permutation of the group
-    #[must_use]
-    pub fn identity(&self) -> Permutation {
-        Permutation {
-            // Map every value to itself
-            mapping: OnceLock::from((0..self.facelet_count()).collect::<Vec<_>>()),
-            cycles: OnceLock::new(),
-            facelet_count: self.facelet_count(),
-        }
-    }
-
     /// Get a generator by it's name
     #[must_use]
     pub fn get_generator(&self, name: &str) -> Option<&Permutation> {
@@ -433,7 +422,7 @@ impl Algorithm {
         perm_group: Arc<PermutationGroup>,
         move_seq: Vec<ArcIntern<str>>,
     ) -> Result<Algorithm, ArcIntern<str>> {
-        let mut permutation = perm_group.identity();
+        let mut permutation = Permutation::identity();
 
         perm_group
             .compose_generators_into(&mut permutation, move_seq.iter())
@@ -455,7 +444,7 @@ impl Algorithm {
     /// If the string cannot be parsed as an algorithm, this code will return `None`
     #[must_use]
     pub fn parse_from_string(perm_group: Arc<PermutationGroup>, string: &str) -> Option<Algorithm> {
-        let mut permutation = perm_group.identity();
+        let mut permutation = Permutation::identity();
 
         let mut move_seq = Vec::new();
 
@@ -478,7 +467,7 @@ impl Algorithm {
     /// Create a new algorithm that is the identity permutation (does nothing).
     #[must_use]
     pub fn identity(perm_group: Arc<PermutationGroup>) -> Algorithm {
-        let identity = perm_group.identity();
+        let identity = Permutation::identity();
         Algorithm {
             perm_group,
             permutation: identity,
@@ -574,7 +563,7 @@ mod tests {
     fn exponentiation() {
         let cube_group = puzzle("3x3").permutation_group();
 
-        let mut perm = cube_group.identity();
+        let mut perm = Permutation::identity();
 
         cube_group
             .compose_generators_into(
@@ -586,7 +575,7 @@ mod tests {
         let mut exp_perm = perm.clone();
         exp_perm.exponentiate(Int::<I>::from(7_u64));
 
-        let mut repeat_compose_perm = cube_group.identity();
+        let mut repeat_compose_perm = Permutation::identity();
 
         repeat_compose_perm.compose_into(&perm);
         repeat_compose_perm.compose_into(&perm);

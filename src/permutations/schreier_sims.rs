@@ -197,7 +197,7 @@ impl Stabilizer {
 
         // Sift new generators down the chain
         for i in 0..self.group.facelet_count() {
-            let mut rep = self.group.identity();
+            let mut rep = Permutation::identity();
             let Ok(()) = self.inverse_rep_to(i, &mut rep) else {
                 continue;
             };
