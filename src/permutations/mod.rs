@@ -5,7 +5,7 @@ use std::{
 use internment::ArcIntern;
 use itertools::Itertools;
 
-use crate::numbers::{I, Int, U};
+use crate::{numbers::{I, Int, U}, union_find::UnionFind};
 
 pub mod schreier_sims;
 
@@ -15,6 +15,7 @@ pub struct PermutationGroup {
     facelet_colors: Vec<ArcIntern<str>>,
     generators: HashMap<ArcIntern<str>, Permutation>,
     generator_inverses: HashMap<ArcIntern<str>, ArcIntern<str>>,
+    orbits: OnceLock<Arc<UnionFind<(), ()>>>,
 }
 
 impl PermutationGroup {
@@ -62,6 +63,7 @@ impl PermutationGroup {
             facelet_colors,
             generators,
             generator_inverses,
+            orbits: OnceLock::new(),
         }
     }
 
@@ -134,6 +136,21 @@ impl PermutationGroup {
             *generator_move =
                 ArcIntern::clone(self.generator_inverses.get(generator_move).unwrap());
         }
+    }
+
+    /// Get the orbits of all of the stickers
+    pub fn orbits(&self) -> &UnionFind<(), ()> {
+        self.orbits.get_or_init(|| {
+            let mut union_find = UnionFind::new(self.facelet_count());
+
+            for (_, generator) in self.generators() {
+                for i in 0..self.facelet_count() {
+                    union_find.union(i, generator.mapping()[i], ());
+                }
+            }
+
+            Arc::new(union_find)
+        })
     }
 }
 
