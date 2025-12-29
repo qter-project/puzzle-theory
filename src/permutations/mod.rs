@@ -1,11 +1,16 @@
 use std::{
-    collections::HashMap, hash::Hash, sync::{Arc, OnceLock}
+    collections::HashMap,
+    hash::Hash,
+    sync::{Arc, OnceLock},
 };
 
 use internment::ArcIntern;
 use itertools::Itertools;
 
-use crate::{numbers::{I, Int, U}, union_find::UnionFind};
+use crate::{
+    numbers::{I, Int, U},
+    union_find::UnionFind,
+};
 
 pub mod schreier_sims;
 
@@ -144,8 +149,8 @@ impl PermutationGroup {
             let mut union_find = UnionFind::new(self.facelet_count());
 
             for (_, generator) in self.generators() {
-                for i in 0..self.facelet_count() {
-                    union_find.union(i, generator.mapping()[i], ());
+                for (from, to) in generator.mapping().all_changes() {
+                    union_find.union(from, to, ());
                 }
             }
 
@@ -158,7 +163,7 @@ impl PermutationGroup {
 #[derive(Clone)]
 pub struct Permutation {
     pub(crate) facelet_count: usize,
-    // One of these two must be defined
+    // It is required that one of these two must be defined
     mapping: OnceLock<Vec<usize>>,
     cycles: OnceLock<Vec<Vec<usize>>>,
 }
@@ -195,11 +200,11 @@ impl Default for Permutation {
 
 impl Permutation {
     /// Create a permutation that represents the do-nothing permutation.
-    #[must_use] 
+    #[must_use]
     pub fn identity() -> Permutation {
         Self::from_mapping(Vec::new())
     }
-    
+
     /// Create a permutation using mapping notation. `mapping` is a list of facelet indices where the index is the facelet and the value is the facelet it permutes to.
     ///
     /// # Panics
@@ -238,13 +243,10 @@ impl Permutation {
         }
     }
 
-    /// Get the permutation in mapping notation where `.mapping()[facelet]` gives where the facelet permutes to
-    ///
-    /// # Panics
-    ///
-    /// This function will panic if neither `mapping` nor `cycles` are defined
-    pub fn mapping(&self) -> &[usize] {
-        self.mapping.get_or_init(|| {
+    /// Get the permutation in mapping notation where `.mapping().get(facelet)` gives where the facelet permutes to
+    #[expect(clippy::missing_panics_doc)]
+    pub fn mapping(&self) -> Mapping<'_> {
+        let mapping = self.mapping.get_or_init(|| {
             let cycles = self
                 .cycles
                 .get()
@@ -260,11 +262,13 @@ impl Permutation {
             }
 
             mapping
-        })
+        });
+
+        Mapping { mapping }
     }
 
     fn minimal_mapping(&self) -> &[usize] {
-        let mut mapping = self.mapping();
+        let mut mapping = self.mapping().mapping;
 
         while !mapping.is_empty() && mapping.last().copied() == Some(mapping.len() - 1) {
             mapping = &mapping[0..mapping.len() - 1];
@@ -274,10 +278,7 @@ impl Permutation {
     }
 
     /// Get the permutation in cycles notation
-    ///
-    /// # Panics
-    ///
-    /// This function will panic if neither `mapping` nor `cycles` are defined
+    #[expect(clippy::missing_panics_doc)]
     pub fn cycles(&self) -> &[Vec<usize>] {
         self.cycles.get_or_init(|| {
             let mapping = self
@@ -352,16 +353,37 @@ impl Permutation {
         let my_mapping = self.mapping_mut();
         let other_mapping = other.mapping();
 
-        while my_mapping.len() < other_mapping.len() {
+        while my_mapping.len() < other_mapping.mapping.len() {
             my_mapping.push(my_mapping.len());
         }
 
         for value in my_mapping.iter_mut() {
-            *value = *other_mapping.get(*value).unwrap_or(value);
+            *value = other_mapping.get(*value);
         }
 
         // Invalidate `cycles`
         self.cycles = OnceLock::new();
+    }
+}
+
+pub struct Mapping<'a> {
+    mapping: &'a [usize],
+}
+
+impl Mapping<'_> {
+    /// Returns where the given index maps to
+    #[must_use]
+    pub fn get(&self, idx: usize) -> usize {
+        self.mapping.get(idx).copied().unwrap_or(idx)
+    }
+
+    /// Returns an iterator over all elements of the mapping that do not map to themselves.
+    pub fn all_changes(&self) -> impl Iterator<Item = (usize, usize)> {
+        self.mapping
+            .iter()
+            .copied()
+            .enumerate()
+            .filter(|(from, to)| from != to)
     }
 }
 
@@ -419,7 +441,7 @@ impl Algorithm {
     /// # Errors
     ///
     /// If the string cannot be parsed as an algorithm, this code will return `None`
-    #[must_use] 
+    #[must_use]
     pub fn parse_from_string(perm_group: Arc<PermutationGroup>, string: &str) -> Option<Algorithm> {
         let mut permutation = perm_group.identity();
 
@@ -528,7 +550,10 @@ impl core::fmt::Debug for Algorithm {
 mod tests {
     use internment::ArcIntern;
 
-    use crate::{numbers::{I, Int}, puzzle_geometry::parsing::puzzle};
+    use crate::{
+        numbers::{I, Int},
+        puzzle_geometry::parsing::puzzle,
+    };
 
     #[test]
     fn exponentiation() {

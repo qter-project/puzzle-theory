@@ -91,9 +91,7 @@ impl Stabilizer {
     fn is_member(&self, mut permutation: Permutation) -> bool {
         let rep = permutation
             .mapping()
-            .get(self.stabilizes)
-            .copied()
-            .unwrap_or(self.stabilizes);
+            .get(self.stabilizes);
 
         let find_info = self.coset_reps.find(rep);
 
@@ -116,9 +114,7 @@ impl Stabilizer {
     fn solution(&self, mut permutation: Permutation) -> Vec<&Permutation> {
         let rep = permutation
             .mapping()
-            .get(self.stabilizes)
-            .copied()
-            .unwrap_or(self.stabilizes);
+            .get(self.stabilizes);
 
         let find_info = self.coset_reps.find(rep);
 
@@ -165,7 +161,7 @@ impl Stabilizer {
         self.generating_set.push(generator);
         let generator = self.generating_set.last().unwrap();
 
-        let mapping = generator.mapping().to_owned();
+        let mapping = generator.mapping();
         let mut inv = generator.clone();
         inv.exponentiate(-Int::<I>::one());
 
@@ -174,18 +170,18 @@ impl Stabilizer {
 
         for i in 0..self.group.facelet_count() {
             if self.coset_reps.find(i).root_idx() == self.stabilizes
-                && self.coset_reps.find(mapping.get(i).copied().unwrap_or(i)).root_idx() != self.stabilizes
+                && self.coset_reps.find(mapping.get(i)).root_idx() != self.stabilizes
             {
                 let inv_rep = inv.clone();
-                self.coset_reps.union(i, mapping[i], inv_rep);
-                newly_in_orbit.push_back(mapping[i]);
+                self.coset_reps.union(i, mapping.get(i), inv_rep);
+                newly_in_orbit.push_back(mapping.get(i));
             }
         }
 
         // Complete the BFS and find everything new in orbit
         while let Some(spot) = newly_in_orbit.pop_front() {
             for perm in &self.generating_set {
-                let goes_to = perm.mapping().get(spot).copied().unwrap_or(spot);
+                let goes_to = perm.mapping().get(spot);
                 if self.coset_reps.find(goes_to).root_idx() != self.stabilizes {
                     let mut inv_alg = perm.clone();
                     inv_alg.exponentiate(-Int::<I>::one());
@@ -211,7 +207,7 @@ impl Stabilizer {
             for generator in &self.generating_set {
                 let mut new_generator = rep.clone();
                 new_generator.compose_into(generator);
-                self.inverse_rep_to(new_generator.mapping()[self.stabilizes], &mut new_generator)
+                self.inverse_rep_to(new_generator.mapping().get(self.stabilizes), &mut new_generator)
                     .unwrap();
                 self.next.as_mut().unwrap().extend(new_generator);
             }
