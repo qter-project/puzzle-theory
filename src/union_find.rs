@@ -1,11 +1,14 @@
 use std::{
-    cell::{RefCell, UnsafeCell},
+    cell::UnsafeCell,
     fmt::Debug,
-    marker::PhantomData,
     mem,
+    sync::{RwLock, atomic::{AtomicUsize, Ordering}},
 };
 
-use crate::{numbers::{I, Int}, permutations::Permutation};
+use crate::{
+    numbers::{I, Int},
+    permutations::Permutation,
+};
 
 /// Metadata about each disjoint set
 pub trait SetInfo {
@@ -29,8 +32,7 @@ impl SetInfo for () {
 impl PathInfo for () {
     fn join_paths((): &mut Self, (): &Self) {}
 
-    fn remove_prefix((): &mut Self, (): &Self) {
-    }
+    fn remove_prefix((): &mut Self, (): &Self) {}
 }
 
 /// A `SetInfo` implementor that counts the cardinality of each set
@@ -66,15 +68,20 @@ impl PathInfo for Permutation {
 enum UnionFindEntry<S: SetInfo, P: PathInfo> {
     RootOfSet { set_meta: S },
     // Tuple of (owned by, path info)
-    OwnedBy(UnsafeCell<(usize, P)>),
+    // Invariants of the UnsafeCell: In every situation, the UnsafeCell is treated as an immutable location and a mutable reference is only taken in one location (path compression). That location has the proof that it's valid.
+    OwnedBy { owned_by: AtomicUsize, path_info: UnsafeCell<P> },
 }
+
+// SAFETY: We are requiring that `S` and `P` be `Sync`, and we have synchronization for the `UnsafeCell`.
+// TODO: Change to `SyncUnsafeCell` once that's stabilized.
+unsafe impl<S: SetInfo + Sync, P: PathInfo + Sync> Sync for UnionFindEntry<S, P> {}
 
 /// A data structure allowing you track disjoint sets of numbers. In puzzle-theory, this means orbits in a permutation group but you can use it for anything.
 ///
 /// This structure also keeps track of metadata for each set and element. If you do not need this, use `()` for the `S` parameter.
 pub struct UnionFind<S: SetInfo, P: PathInfo> {
     sets: Box<[UnionFindEntry<S, P>]>,
-    _unsync: PhantomData<RefCell<()>>,
+    compression_lock: RwLock<()>,
 }
 
 impl<S: SetInfo + Debug, P: PathInfo + Debug> Debug for UnionFind<S, P> {
@@ -124,34 +131,19 @@ impl<'a, S: SetInfo, P: PathInfo> FindResult<'a, S, P> {
 impl<S: SetInfo + Default, P: PathInfo> UnionFind<S, P> {
     #[must_use]
     pub fn new(item_count: usize) -> Self {
-        let mut sets = Vec::with_capacity(item_count);
-
-        for _ in 0..item_count {
-            sets.push(UnionFindEntry::RootOfSet {
-                set_meta: S::default(),
-            });
-        }
-
-        UnionFind {
-            sets: Box::from(sets),
-            _unsync: PhantomData,
-        }
+        Self::new_with_initial_set_info((0..item_count).map(|_| S::default()))
     }
 }
 
-impl<S: SetInfo + Debug, P: PathInfo + Debug> UnionFind<S, P> {
+impl<S: SetInfo, P: PathInfo> UnionFind<S, P> {
     /// Create a new `UnionFind` with the given number of elements
     #[must_use]
-    pub fn new_with_initial_set_info(set_infos: Vec<S>) -> Self {
-        let mut sets = Vec::with_capacity(set_infos.len());
-
-        for info in set_infos {
-            sets.push(UnionFindEntry::RootOfSet { set_meta: info });
-        }
-
+    pub fn new_with_initial_set_info(set_infos: impl Iterator<Item = S>) -> Self {
         UnionFind {
-            sets: Box::from(sets),
-            _unsync: PhantomData,
+            sets: set_infos
+                .map(|set_meta| UnionFindEntry::RootOfSet { set_meta })
+                .collect::<Box<[_]>>(),
+            compression_lock: RwLock::new(()),
         }
     }
 
@@ -159,6 +151,7 @@ impl<S: SetInfo + Debug, P: PathInfo + Debug> UnionFind<S, P> {
     ///
     /// Panics if the item is outside the range of numbers in the union-find.
     #[must_use]
+    #[expect(clippy::missing_panics_doc)]
     pub fn find(&self, item: usize) -> FindResult<'_, S, P> {
         let entry = &self.sets[item];
 
@@ -168,23 +161,42 @@ impl<S: SetInfo + Debug, P: PathInfo + Debug> UnionFind<S, P> {
                 set_meta,
                 path_meta: None,
             },
-            UnionFindEntry::OwnedBy(info) => {
-                let mut ret = {
-                    let data = unsafe { &*info.get() };
-                    self.find(data.0)
-                };
+            UnionFindEntry::OwnedBy { path_info: info, owned_by } => {
+                let idx = owned_by.load(Ordering::Relaxed);
+
+                let mut ret = self.find(idx);
 
                 if let Some(root_meta) = ret.path_meta() {
-                    // SAFETY: This mutable borrow is unique because once this function returns, the node is guaranteed to be a child of a root and compression will not happen again until `union` is called. This function returns an `&` reference to the union-find and `union` takes an `&mut` reference so `union` will not be called until the reference goes away. Therefore, this branch will never get hit while an immutable reference to this is being held.
-                    // Also the union-find is unsend so we can't be doing this on another thread either
-                    {
-                        let info_mut = unsafe { &mut *info.get() };
-                        info_mut.0 = ret.root_idx;
-                        P::join_paths(&mut info_mut.1, root_meta);
+                    let lock = self.compression_lock.write().unwrap();
+
+                    let idx = owned_by.load(Ordering::Relaxed);
+
+                    // It's possible that while waiting for a write lock another thread successfully compressed the branch, in which case we don't need to do anything.
+                    if idx != ret.root_idx() {
+                        {
+                            // SAFETY: This mutable borrow is unique because
+                            // - Since we are here, we know that this node has not been fully compressed yet
+                            // - Therefore, `find` on this node has not been called since the last call to `union`
+                            // - Therefore, there are no immutable references to this after any call to `union`
+                            // - There are no immutable references from _before_ any call to `union` because `union` takes a mutable reference which would require all immutable references to disappear
+                            // - There are no immutable references in other threads because the only other accesses to the data are
+                            //     - While getting `idx` which is protected by a read lock,
+                            //     - Here, which is protected by a write lock,
+                            //     - And while setting `ret.path_meta` where that branch cannot be reached until the path compression is complete.
+                            let info_mut = unsafe { &mut *info.get() };
+                    
+                            P::join_paths(info_mut, root_meta);
+                        }
+
+                        // Now the mutable reference is gone and it's okay for other threads to access the data. We can signal that by updating the atomic index.
+                        owned_by.store(ret.root_idx(), Ordering::Relaxed);
+
+                        // We have to drop the lock after so that any threads entering will observe the store and not perform the compression.
+                        drop(lock);
                     }
                 }
 
-                ret.path_meta = Some(&unsafe { &*info.get() }.1);
+                ret.path_meta = Some(unsafe { &*info.get() });
 
                 ret
             }
@@ -209,7 +221,7 @@ impl<S: SetInfo + Debug, P: PathInfo + Debug> UnionFind<S, P> {
 
         let a_idx = a_result.root_idx;
         let b_idx = b_result.root_idx;
-        
+
         if let Some(b_path) = b_result.path_meta() {
             P::remove_prefix(&mut path_info, b_path);
         }
@@ -220,19 +232,19 @@ impl<S: SetInfo + Debug, P: PathInfo + Debug> UnionFind<S, P> {
 
         let old_b_data = mem::replace(
             &mut self.sets[b_idx],
-            UnionFindEntry::OwnedBy(UnsafeCell::new((a_idx, path_info))),
+            UnionFindEntry::OwnedBy { path_info: UnsafeCell::new(path_info), owned_by: AtomicUsize::new(a_idx) },
         );
 
         let other_set_meta = match old_b_data {
             UnionFindEntry::RootOfSet { set_meta } => set_meta,
-            UnionFindEntry::OwnedBy(_) => unreachable!(),
+            UnionFindEntry::OwnedBy { path_info: _, owned_by: _ } => unreachable!(),
         };
 
         match &mut self.sets[a_idx] {
             UnionFindEntry::RootOfSet { set_meta } => {
                 set_meta.merge(other_set_meta);
             }
-            UnionFindEntry::OwnedBy(_) => unreachable!(),
+            UnionFindEntry::OwnedBy { path_info: _, owned_by: _ } => unreachable!(),
         }
     }
 }
