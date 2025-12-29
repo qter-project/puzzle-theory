@@ -164,6 +164,7 @@ impl PermutationGroup {
 pub struct Permutation {
     pub(crate) facelet_count: usize,
     // It is required that one of these two must be defined
+    // `mapping` is also required to be minimal in the sense that there are no facelets that map to themselves at the end of the array
     mapping: OnceLock<Vec<usize>>,
     cycles: OnceLock<Vec<Vec<usize>>>,
 }
@@ -198,6 +199,13 @@ impl Default for Permutation {
     }
 }
 
+/// Remove useless identity mappings at the end
+fn mk_minimal(mapping: &mut Vec<usize>) {
+    while let Some(last) = mapping.last() && *last == mapping.len() - 1 {
+        mapping.pop();
+    }
+}
+
 impl Permutation {
     /// Create a permutation that represents the do-nothing permutation.
     #[must_use]
@@ -211,7 +219,9 @@ impl Permutation {
     ///
     /// This function will panic if the mapping is not a valid permutation (i.e. if it contains duplicates or is not a complete mapping)
     #[must_use]
-    pub fn from_mapping(mapping: Vec<usize>) -> Permutation {
+    pub fn from_mapping(mut mapping: Vec<usize>) -> Permutation {
+        mk_minimal(&mut mapping);
+        
         let facelet_count = mapping.len();
 
         assert!(mapping.iter().all_unique());
@@ -265,16 +275,6 @@ impl Permutation {
         });
 
         Mapping { mapping }
-    }
-
-    fn minimal_mapping(&self) -> &[usize] {
-        let mut mapping = self.mapping().mapping;
-
-        while !mapping.is_empty() && mapping.last().copied() == Some(mapping.len() - 1) {
-            mapping = &mapping[0..mapping.len() - 1];
-        }
-
-        mapping
     }
 
     /// Get the permutation in cycles notation
@@ -338,6 +338,8 @@ impl Permutation {
             }
         }
 
+        mk_minimal(&mut mapping);
+
         self.mapping = OnceLock::from(mapping);
         self.cycles = OnceLock::new();
     }
@@ -361,35 +363,44 @@ impl Permutation {
             *value = other_mapping.get(*value);
         }
 
+        mk_minimal(my_mapping);
+
         // Invalidate `cycles`
         self.cycles = OnceLock::new();
     }
 }
 
+#[derive(Clone, Copy)]
 pub struct Mapping<'a> {
     mapping: &'a [usize],
 }
 
-impl Mapping<'_> {
+impl<'a> Mapping<'a> {
     /// Returns where the given index maps to
     #[must_use]
-    pub fn get(&self, idx: usize) -> usize {
+    pub fn get(self, idx: usize) -> usize {
         self.mapping.get(idx).copied().unwrap_or(idx)
     }
 
     /// Returns an iterator over all elements of the mapping that do not map to themselves.
-    pub fn all_changes(&self) -> impl Iterator<Item = (usize, usize)> {
+    pub fn all_changes(self) -> impl Iterator<Item = (usize, usize)> {
         self.mapping
             .iter()
             .copied()
             .enumerate()
             .filter(|(from, to)| from != to)
     }
+
+    /// Get the underlying mapping as a slice. The slice is minimal in the sense that any suffix of items that are mapped to themselves are excluded.
+    #[must_use] 
+    pub fn minimal(self) -> &'a [usize] {
+        self.mapping
+    }
 }
 
 impl PartialEq for Permutation {
     fn eq(&self, other: &Self) -> bool {
-        self.minimal_mapping() == other.minimal_mapping()
+        self.mapping().minimal() == other.mapping().minimal()
     }
 }
 
@@ -397,7 +408,7 @@ impl Eq for Permutation {}
 
 impl Hash for Permutation {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        self.minimal_mapping().hash(state);
+        self.mapping().minimal().hash(state);
     }
 }
 
