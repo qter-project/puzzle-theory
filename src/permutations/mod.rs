@@ -32,7 +32,7 @@ impl PermutationGroup {
     #[must_use]
     pub fn new(
         facelet_colors: Vec<ArcIntern<str>>,
-        mut generators: HashMap<ArcIntern<str>, Permutation>,
+        generators: HashMap<ArcIntern<str>, Permutation>,
     ) -> PermutationGroup {
         assert!(!generators.is_empty());
 
@@ -43,10 +43,6 @@ impl PermutationGroup {
                 generator.facelet_count,
                 facelet_colors.len()
             );
-        }
-
-        for perm in generators.values_mut() {
-            perm.facelet_count = facelet_colors.len();
         }
 
         let mut generator_inverses = HashMap::new();
@@ -201,7 +197,9 @@ impl Default for Permutation {
 
 /// Remove useless identity mappings at the end
 fn mk_minimal(mapping: &mut Vec<usize>) {
-    while let Some(last) = mapping.last() && *last == mapping.len() - 1 {
+    while let Some(last) = mapping.last()
+        && *last == mapping.len() - 1
+    {
         mapping.pop();
     }
 }
@@ -221,7 +219,7 @@ impl Permutation {
     #[must_use]
     pub fn from_mapping(mut mapping: Vec<usize>) -> Permutation {
         mk_minimal(&mut mapping);
-        
+
         let facelet_count = mapping.len();
 
         assert!(mapping.iter().all_unique());
@@ -285,11 +283,12 @@ impl Permutation {
                 .mapping
                 .get()
                 .expect("either `mapping` or `cycles` to be defined");
+            let mapping = Mapping { mapping };
 
-            let mut covered = vec![false; self.facelet_count];
+            let mut covered = vec![false; mapping.minimal().len()];
             let mut cycles = vec![];
 
-            for i in 0..self.facelet_count {
+            for i in 0..covered.len() {
                 if covered[i] {
                     continue;
                 }
@@ -299,7 +298,7 @@ impl Permutation {
 
                 loop {
                     let idx = *cycle.last().unwrap();
-                    let next = mapping.get(idx).copied().unwrap_or(idx);
+                    let next = mapping.get(idx);
 
                     if cycle[0] == next {
                         break;
@@ -321,7 +320,7 @@ impl Permutation {
     /// Find the result of applying the permutation to the identity `power` times.
     ///
     /// This calculates the value in O(1) time with respect to `power`.
-    #[allow(clippy::missing_panics_doc)]
+    #[expect(clippy::missing_panics_doc)]
     pub fn exponentiate(&mut self, power: Int<I>) {
         self.cycles();
         let mut mapping = self
@@ -392,8 +391,10 @@ impl<'a> Mapping<'a> {
     }
 
     /// Get the underlying mapping as a slice. The slice is minimal in the sense that any suffix of items that are mapped to themselves are excluded.
-    #[must_use] 
+    #[must_use]
+    #[expect(clippy::missing_panics_doc)]
     pub fn minimal(self) -> &'a [usize] {
+        assert!(self.mapping.last().is_none_or(|v| *v != self.mapping.len()));
         self.mapping
     }
 }
@@ -559,10 +560,13 @@ impl core::fmt::Debug for Algorithm {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashMap;
+
     use internment::ArcIntern;
 
     use crate::{
         numbers::{I, Int},
+        permutations::{Permutation, PermutationGroup},
         puzzle_geometry::parsing::puzzle,
     };
 
@@ -593,5 +597,67 @@ mod tests {
         repeat_compose_perm.compose_into(&perm);
 
         assert_eq!(exp_perm, repeat_compose_perm);
+    }
+
+    #[test]
+    fn mk_group() {
+        let mut generators = HashMap::new();
+
+        generators.insert(
+            ArcIntern::from("A"),
+            Permutation::from_cycles(vec![vec![0, 1, 2]]),
+        );
+        generators.insert(
+            ArcIntern::from("B"),
+            Permutation::from_cycles(vec![vec![3, 4, 5]]),
+        );
+        generators.insert(
+            ArcIntern::from("C"),
+            Permutation::from_cycles(vec![vec![5, 6, 7]]),
+        );
+        generators.insert(
+            ArcIntern::from("D"),
+            Permutation::from_cycles(vec![vec![8, 9]]),
+        );
+        generators.insert(
+            ArcIntern::from("E"),
+            Permutation::from_cycles(vec![vec![10, 11, 12, 13]]),
+        );
+        generators.insert(
+            ArcIntern::from("A'"),
+            Permutation::from_cycles(vec![vec![2, 1, 0]]),
+        );
+        generators.insert(
+            ArcIntern::from("B'"),
+            Permutation::from_cycles(vec![vec![5, 4, 3]]),
+        );
+        generators.insert(
+            ArcIntern::from("C'"),
+            Permutation::from_cycles(vec![vec![7, 6, 5]]),
+        );
+        generators.insert(
+            ArcIntern::from("E'"),
+            Permutation::from_cycles(vec![vec![13, 12, 11, 10]]),
+        );
+
+        let _ = PermutationGroup::new(
+            vec![
+                ArcIntern::from("A"),
+                ArcIntern::from("B"),
+                ArcIntern::from("C"),
+                ArcIntern::from("D"),
+                ArcIntern::from("E"),
+                ArcIntern::from("F"),
+                ArcIntern::from("G"),
+                ArcIntern::from("H"),
+                ArcIntern::from("I"),
+                ArcIntern::from("J"),
+                ArcIntern::from("K"),
+                ArcIntern::from("L"),
+                ArcIntern::from("K"),
+                ArcIntern::from("L"),
+            ],
+            generators,
+        );
     }
 }
