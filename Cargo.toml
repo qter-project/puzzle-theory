@@ -11,9 +11,7 @@ internment = { version = "0.8.6", features = ["arc"] }
 itertools = "0.14.0"
 phf = { version = "0.11.3", features = ["macros"] }
 thiserror = "2.0"
-algebraics = { git = "https://github.com/qter-project/algebraics", branch = "prevent-exploding-ranges" }
+algebraics = { git = "https://github.com/qter-project/algebraics" }
 boxcar = "0.2.14"
 num-bigint = "0.4.6"
 num-rational = "0.4.2"
-# algebraics = { git = "https://github.com/Xendergo/algebraics" }
-# algebraics = { path = "../../../algebraics" }
