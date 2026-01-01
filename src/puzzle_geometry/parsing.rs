@@ -36,16 +36,6 @@ static THREE_BY_THREE: LazyLock<Arc<PuzzleGeometry>> = LazyLock::new(|| {
         polyhedron: CUBE.to_owned(),
         cut_surfaces: vec![
             Arc::from(PlaneCut {
-                spot: Vector::new_ratios([[(1, 3), (0, 1), (0, 1)]]),
-                normal: Vector::new([[1, 0, 0]]),
-                name: ArcIntern::from("R"),
-            }),
-            Arc::from(PlaneCut {
-                spot: Vector::new_ratios([[(-1, 3), (0, 1), (0, 1)]]),
-                normal: Vector::new([[-1, 0, 0]]),
-                name: ArcIntern::from("L"),
-            }),
-            Arc::from(PlaneCut {
                 spot: Vector::new_ratios([[(0, 1), (1, 3), (0, 1)]]),
                 normal: Vector::new([[0, 1, 0]]),
                 name: ArcIntern::from("U"),
@@ -64,6 +54,16 @@ static THREE_BY_THREE: LazyLock<Arc<PuzzleGeometry>> = LazyLock::new(|| {
                 spot: Vector::new_ratios([[(0, 1), (0, 1), (1, 3)]]),
                 normal: Vector::new([[0, 0, 1]]),
                 name: ArcIntern::from("B"),
+            }),
+            Arc::from(PlaneCut {
+                spot: Vector::new_ratios([[(1, 3), (0, 1), (0, 1)]]),
+                normal: Vector::new([[1, 0, 0]]),
+                name: ArcIntern::from("R"),
+            }),
+            Arc::from(PlaneCut {
+                spot: Vector::new_ratios([[(-1, 3), (0, 1), (0, 1)]]),
+                normal: Vector::new([[-1, 0, 0]]),
+                name: ArcIntern::from("L"),
             }),
         ],
         definition: Span::new(ArcIntern::from("3x3x3"), 0, 3),

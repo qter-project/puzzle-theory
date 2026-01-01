@@ -209,6 +209,7 @@ pub struct PuzzleGeometry {
 pub struct PieceData {
     stickers: Box<[usize]>,
     twist: Permutation,
+    name: ArcIntern<str>,
 }
 
 impl PieceData {
@@ -323,7 +324,7 @@ impl PuzzleGeometry {
     fn number_facelet_orientations(
         group: &Arc<PermutationGroup>,
         sticker_orbits: &UnionFind<(), ()>,
-        orbits: &[(Vec<Vec<usize>>, OnceCell<Num>)],
+        orbits: &[(Vec<(ArcIntern<str>, Vec<usize>)>, OnceCell<Num>)],
     ) -> (Vec<usize>, Vec<usize>) {
         let mut facelet_orientation_numbers: Vec<Option<usize>> = vec![None; group.facelet_count()];
         let mut orientation_counts = Vec::new();
@@ -333,27 +334,29 @@ impl PuzzleGeometry {
             let piece = &orbit.0[0];
 
             let mut chain = (0..group.facelet_count()).collect_vec();
-            chain.swap(0, piece[0]);
+            chain.swap(0, piece.1[0]);
 
             // Create a stabilizer chain that will let us ensure that a "twist" is physically realizable as opposed to an arbitrary permutation of stickers
             let stabchain = StabilizerChain::new_with_chain(group, &chain);
             let orbit_reps = piece
+                .1
                 .iter()
                 .unique_by(|v| sticker_orbits.find(**v).root_idx())
                 .collect::<Vec<_>>();
-            let ori_count = piece.len() / orbit_reps.len();
+            let ori_count = piece.1.len() / orbit_reps.len();
 
             if ori_count == 1 {
-                for item in piece {
+                for item in &piece.1 {
                     facelet_orientation_numbers[*item] = Some(0);
                 }
             } else {
                 let cycles = piece
+                    .1
                     .iter()
                     .skip(1)
                     .filter_map(|v| {
                         stabchain
-                            .solution(Permutation::from_cycles(vec![vec![piece[0], *v]]))
+                            .solution(Permutation::from_cycles(vec![vec![piece.1[0], *v]]))
                             .into_iter()
                             .next()
                     })
@@ -443,31 +446,30 @@ impl PuzzleGeometry {
 
             let non_fixed_stickers = self.non_fixed_stickers();
             for (sticker, (_, regions)) in non_fixed_stickers.iter().enumerate() {
-                pieces
-                    .entry(regions.iter().sorted_unstable().cloned().collect())
-                    .or_default()
-                    .push(sticker);
+                pieces.entry(regions.clone()).or_default().push(sticker);
             }
 
             // Separate pieces into orbits
-            let mut orbits: Vec<(Vec<Vec<usize>>, OnceCell<Num>)> = Vec::new();
+            let mut orbits: Vec<(Vec<(ArcIntern<str>, Vec<usize>)>, OnceCell<Num>)> = Vec::new();
 
-            'next_piece: for (_, piece) in pieces {
+            'next_piece: for (name, piece) in pieces {
+                let name = ArcIntern::from(name.iter().join(""));
+
                 let orbit_rep = sticker_orbits.find(piece[0]).root_idx();
                 for maybe_orbit in &mut orbits {
-                    if maybe_orbit.0[0].len() != piece.len() {
+                    if maybe_orbit.0[0].1.len() != piece.len() {
                         continue;
                     }
 
-                    for facelet in &maybe_orbit.0[0] {
+                    for facelet in &maybe_orbit.0[0].1 {
                         if sticker_orbits.find(*facelet).root_idx() == orbit_rep {
-                            maybe_orbit.0.push(piece);
+                            maybe_orbit.0.push((name, piece));
                             continue 'next_piece;
                         }
                     }
                 }
 
-                orbits.push((vec![piece], OnceCell::new()));
+                orbits.push((vec![(name, piece)], OnceCell::new()));
             }
 
             // Sort the pieces in each orbit
@@ -476,19 +478,19 @@ impl PuzzleGeometry {
                 orbit.0.sort_by_cached_key(|v| {
                     (
                         ComparablePoint(
-                            v.iter()
+                            v.1.iter()
                                 .map(|idx| non_fixed_stickers[*idx].0.centroid())
                                 .sum::<Vector<3>>(),
                         ),
-                        v[0],
+                        v.1[0],
                     )
                 });
             }
 
-            let orbit_dist = |orbit: &[Vec<usize>]| {
+            let orbit_dist = |orbit: &[(ArcIntern<str>, Vec<usize>)]| {
                 orbit
                     .iter()
-                    .flatten()
+                    .flat_map(|v| &v.1)
                     .map(|v| non_fixed_stickers[*v].0.centroid().norm_squared())
                     .sum::<Num>()
             };
@@ -496,12 +498,12 @@ impl PuzzleGeometry {
             // Sort the orbits by (piece count, stickers per piece, distance from center, first sticker in first piece)
             // Note that if we ever have to calculate the distance from center, the orbits have the same number of stickers so dividing by them to get the average has no effect on the comparison. We're also using the norm squared for performance.
             orbits.sort_unstable_by(|(a, dist1), (b, dist2)| match a.len().cmp(&b.len()) {
-                Ordering::Equal => match a[0].len().cmp(&b[0].len()) {
+                Ordering::Equal => match a[0].1.len().cmp(&b[0].1.len()) {
                     Ordering::Equal => match dist1
                         .get_or_init(|| orbit_dist(a))
                         .cmp(dist2.get_or_init(|| orbit_dist(b)))
                     {
-                        Ordering::Equal => a[0][0].cmp(&b[0][0]),
+                        Ordering::Equal => a[0].1[0].cmp(&b[0].1[0]),
                         v => v,
                     },
                     v => v,
@@ -516,7 +518,7 @@ impl PuzzleGeometry {
                 .into_iter()
                 .map(|v| {
                     v.0.into_iter()
-                        .map(|v| {
+                        .map(|(name, v)| {
                             let cycles = v
                                 .iter()
                                 .into_grouping_map_by(|v| sticker_orbits.find(**v).root_idx())
@@ -531,6 +533,7 @@ impl PuzzleGeometry {
                             PieceData {
                                 stickers: v.into(),
                                 twist: Permutation::from_cycles(cycles),
+                                name,
                             }
                         })
                         .collect()
@@ -1219,18 +1222,18 @@ mod tests {
             piece_info,
             &[
                 [
-                    ([5, 10, 16], [5, 16, 10]),
-                    ([7, 18, 24], [7, 24, 18]),
-                    ([2, 26, 32], [2, 32, 26]),
-                    ([0, 8, 34], [34, 0, 8]),
-                    ([15, 21, 40], [15, 21, 40]),
-                    ([23, 29, 42], [23, 29, 42]),
-                    ([31, 37, 47], [31, 37, 47]),
-                    ([13, 39, 45], [13, 45, 39]),
+                    ([5, 10, 16], [5, 16, 10], "UFL"),
+                    ([7, 18, 24], [7, 24, 18], "UFR"),
+                    ([2, 26, 32], [2, 32, 26], "UBR"),
+                    ([0, 8, 34], [34, 0, 8], "UBL"),
+                    ([15, 21, 40], [15, 21, 40], "DFL"),
+                    ([23, 29, 42], [23, 29, 42], "DFR"),
+                    ([31, 37, 47], [31, 37, 47], "DBR"),
+                    ([13, 39, 45], [13, 45, 39], "DBL"),
                 ]
                 .into_iter()
                 .enumerate()
-                .map(|(i, (v, _))| {
+                .map(|(i, (v, _, name))| {
                     // TODO: Make this testcase not pull arbitrary values once we can guarantee that twists are always clockwise.
                     let twist = piece_info[0][i].twist().clone();
                     assert_eq!(twist.cycles().len(), 1);
@@ -1239,29 +1242,30 @@ mod tests {
 
                     PieceData {
                         stickers: v.into(),
-                        // twist: Permutation::from_cycles(vec![t.into()])
                         twist,
+                        name: ArcIntern::from(name),
                     }
                 })
                 .collect::<Box<[_]>>(),
                 Box::from(
                     [
-                        [3, 9],
-                        [6, 17],
-                        [4, 25],
-                        [1, 33],
-                        [12, 19],
-                        [20, 27],
-                        [28, 35],
-                        [11, 36],
-                        [14, 43],
-                        [22, 41],
-                        [30, 44],
-                        [38, 46],
+                        ([3, 9], "UL"),
+                        ([6, 17], "UF"),
+                        ([4, 25], "UR"),
+                        ([1, 33], "UB"),
+                        ([12, 19], "FL"),
+                        ([20, 27], "FR"),
+                        ([28, 35], "BR"),
+                        ([11, 36], "BL"),
+                        ([14, 43], "DL"),
+                        ([22, 41], "DF"),
+                        ([30, 44], "DR"),
+                        ([38, 46], "DB"),
                     ]
-                    .map(|v| PieceData {
+                    .map(|(v, name)| PieceData {
                         stickers: v.into(),
-                        twist: Permutation::from_cycles(vec![v.into()])
+                        twist: Permutation::from_cycles(vec![v.into()]),
+                        name: ArcIntern::from(name)
                     })
                 ),
             ]
