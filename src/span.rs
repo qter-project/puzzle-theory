@@ -1,6 +1,5 @@
 use std::{
-    ops::{Deref, DerefMut},
-    sync::OnceLock,
+    ops::{Deref, DerefMut}, sync::OnceLock
 };
 
 use chumsky::{container::Container, extra::Full, input::ValueInput, prelude::*};

@@ -247,6 +247,11 @@ mod tests {
                 ArcIntern::from("b"),
                 ArcIntern::from("c"),
             ],
+            vec![
+                ArcIntern::from("a"),
+                ArcIntern::from("b"),
+                ArcIntern::from("c"),
+            ],
             perms,
         ));
 

@@ -323,13 +323,16 @@ impl PuzzleGeometry {
                 }
             }
 
-            (Arc::new(PermutationGroup::new(
-                self.stickers()
+            let iter_stickers = 
+                || self.stickers()
                     .iter()
                     .enumerate()
-                    .filter(|(i, _)| !to_skip.contains(i))
-                    .map(|(_, v)| ArcIntern::clone(&v.0.color))
+                    .filter(|(i, _)| !to_skip.contains(i)).map(|(_, v)| v);
+
+            (Arc::new(PermutationGroup::new(
+                    iter_stickers().map(|(v, _)| ArcIntern::clone(&v.color))
                     .collect(),
+                iter_stickers().map(|(_, v)| ArcIntern::from(v.iter().map(|v|&**v).join(""))).collect(),
                 generators,
             )), to_skip)
         })

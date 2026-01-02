@@ -18,6 +18,7 @@ pub mod schreier_sims;
 #[derive(Clone, Debug)]
 pub struct PermutationGroup {
     facelet_colors: Vec<ArcIntern<str>>,
+    piece_assignments: Vec<ArcIntern<str>>,
     generators: HashMap<ArcIntern<str>, Permutation>,
     generator_inverses: HashMap<ArcIntern<str>, ArcIntern<str>>,
     orbits: OnceLock<Arc<UnionFind<(), ()>>>,
@@ -32,8 +33,10 @@ impl PermutationGroup {
     #[must_use]
     pub fn new(
         facelet_colors: Vec<ArcIntern<str>>,
+        piece_assignments: Vec<ArcIntern<str>>,
         generators: HashMap<ArcIntern<str>, Permutation>,
     ) -> PermutationGroup {
+        assert_eq!(facelet_colors.len(), piece_assignments.len());
         assert!(!generators.is_empty());
 
         for generator in generators.values() {
@@ -62,6 +65,7 @@ impl PermutationGroup {
 
         PermutationGroup {
             facelet_colors,
+            piece_assignments,
             generators,
             generator_inverses,
             orbits: OnceLock::new(),
@@ -78,6 +82,12 @@ impl PermutationGroup {
     #[must_use]
     pub fn facelet_colors(&self) -> &[ArcIntern<str>] {
         &self.facelet_colors
+    }
+
+    /// The pieces that every facelet belongs to
+    #[must_use]
+    pub fn piece_assignments(&self) -> &[ArcIntern<str>] {
+        &self.piece_assignments
     }
 
     /// Get a generator by it's name
@@ -646,6 +656,7 @@ mod tests {
                 ArcIntern::from("K"),
                 ArcIntern::from("L"),
             ],
+            vec![ArcIntern::from("A"); 14],
             generators,
         );
     }
