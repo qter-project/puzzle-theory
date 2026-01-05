@@ -1,10 +1,5 @@
 use std::{
-    cell::OnceCell,
-    cmp::{Ordering, Reverse},
-    collections::{BTreeSet, HashMap},
-    mem,
-    num::NonZeroU16,
-    sync::{Arc, OnceLock},
+    cell::OnceCell, cmp::{Ordering, Reverse}, collections::{BTreeSet, HashMap}, mem, num::NonZeroU16, ops::{Add, Sub}, sync::{Arc, OnceLock}
 };
 
 use crate::{
@@ -246,10 +241,50 @@ impl OrbitData {
     }
 }
 
+/// Describes the orientation number of a sticker. Since it's possible for stickers on the same piece to be in different orbits, this also includes a number for the orbit.
+#[derive(PartialEq, Eq, Clone, Copy, Debug, Hash)]
+pub struct OriNum {
+    num: usize,
+    orbit: usize,
+    ori_count: usize,
+}
+
+impl OriNum {
+    /// Get the orientation number
+    #[must_use] 
+    pub fn num(self) -> usize {
+        self.num
+    }
+
+    /// Get the orbit number
+    #[must_use] 
+    pub fn orbit(self) -> usize {
+        self.orbit
+    }
+}
+
+impl Add<usize> for OriNum {
+    type Output = OriNum;
+
+    fn add(mut self, rhs: usize) -> Self::Output {
+        self.num = (self.num + rhs) % self.ori_count;
+        self
+    }
+}
+
+impl Sub<usize> for OriNum {
+    type Output = OriNum;
+
+    fn sub(mut self, rhs: usize) -> Self::Output {
+        self.num = (self.num + (self.ori_count - rhs % self.ori_count)) % self.ori_count;
+        self
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct PiecesData {
     orbits: Box<[OrbitData]>,
-    orientation_numbers: Box<[usize]>,
+    orientation_numbers: Box<[OriNum]>,
 }
 
 impl PiecesData {
@@ -261,7 +296,7 @@ impl PiecesData {
 
     /// Get the orientation numbers of all of the stickers
     #[must_use] 
-    pub fn orientation_numbers(&self) -> &[usize] {
+    pub fn orientation_numbers(&self) -> &[OriNum] {
         &self.orientation_numbers
     }
 }
@@ -362,8 +397,8 @@ impl PuzzleGeometry {
     fn number_facelet_orientations(
         group: &Arc<PermutationGroup>,
         orbits: &[(Vec<(ArcIntern<str>, Vec<usize>)>, OnceCell<Num>)],
-    ) -> (Vec<usize>, Vec<usize>) {
-        let mut facelet_orientation_numbers: Vec<Option<usize>> = vec![None; group.facelet_count()];
+    ) -> (Vec<OriNum>, Vec<usize>) {
+        let mut facelet_orientation_numbers: Vec<Option<OriNum>> = vec![None; group.facelet_count()];
         let mut orientation_counts = Vec::new();
 
         for orbit in orbits {
@@ -383,8 +418,8 @@ impl PuzzleGeometry {
             let ori_count = piece.1.len() / orbit_reps.len();
 
             if ori_count == 1 {
-                for item in &piece.1 {
-                    facelet_orientation_numbers[*item] = Some(0);
+                for (orbit, item) in piece.1.iter().enumerate() {
+                    facelet_orientation_numbers[*item] = Some(OriNum { num: 0, orbit, ori_count });
                 }
             } else {
                 let cycles = piece
@@ -408,9 +443,9 @@ impl PuzzleGeometry {
 
                 // TODO: Filter to ensure twists go clockwise or not secretly be two twists etc
 
-                for cycle in cycles {
-                    for (i, item) in cycle.iter().enumerate() {
-                        facelet_orientation_numbers[*item] = Some(i);
+                for (orbit, cycle) in cycles.iter().enumerate() {
+                    for (num, item) in cycle.iter().enumerate() {
+                        facelet_orientation_numbers[*item] = Some(OriNum { num, orbit, ori_count });
                     }
                 }
             }
@@ -547,7 +582,7 @@ impl PuzzleGeometry {
                                 .collect::<Vec<usize>>()
                                 .into_values()
                                 .map(|mut v| {
-                                    v.sort_unstable_by_key(|idx| facelet_orientation_numbers[*idx]);
+                                    v.sort_unstable_by_key(|idx| facelet_orientation_numbers[*idx].num());
                                     v
                                 })
                                 .collect::<Vec<_>>();
@@ -627,16 +662,16 @@ impl PuzzleGeometry {
                         let starting_orientation = pieces_data.orientation_numbers()[piece.stickers[0]];
                         let new_orientation = pieces_data.orientation_numbers()[first_one_goes_to];
                         // Add ori_count first to prevent wraparound from subtraction
-                        let extra_orientation = (orbit.orientation_count() + new_orientation
-                            - starting_orientation)
-                            .rem_euclid(orbit.orientation_count());
+                        let extra_orientation = new_orientation
+                            - starting_orientation.num()
+                            ;
 
                         let piece_goes_to = sticker_to_piece_mapping[first_one_goes_to];
 
                         this_orbit_transform.push((
                             NonZeroU16::try_from(u16::try_from(piece_goes_to + 1).unwrap())
                                 .unwrap(),
-                            u8::try_from(extra_orientation).unwrap(),
+                            u8::try_from(extra_orientation.num()).unwrap(),
                         ));
                     }
 
