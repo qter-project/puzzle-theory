@@ -1,6 +1,7 @@
 use std::{
     collections::HashMap,
     hash::Hash,
+    mem,
     sync::{Arc, OnceLock},
 };
 
@@ -52,7 +53,7 @@ impl PermutationGroup {
 
         'next_item: for (name, generator) in &generators {
             let mut inverse_perm = generator.to_owned();
-            inverse_perm.exponentiate(Int::from(-1));
+            inverse_perm.invert();
             for (name2, generator2) in &generators {
                 if generator2 == &inverse_perm {
                     generator_inverses.insert(ArcIntern::clone(name), ArcIntern::clone(name2));
@@ -144,7 +145,7 @@ impl PermutationGroup {
             let mut union_find = UnionFind::new(self.facelet_count());
 
             for (_, generator) in self.generators() {
-                for (from, to) in generator.mapping().all_changes() {
+                for (from, to) in generator.goes_to().all_changes() {
                     union_find.union(from, to, ());
                 }
             }
@@ -158,9 +159,11 @@ impl PermutationGroup {
 #[derive(Clone)]
 pub struct Permutation {
     pub(crate) facelet_count: usize,
-    // It is required that one of these two must be defined
-    // `mapping` is also required to be minimal in the sense that there are no facelets that map to themselves at the end of the array
+    // It is required that one of these three must be defined
+    // `mapping` and `passive` are also required to be minimal in the sense that there are no facelets that map to themselves at the end of the array
+    // `cycles` is required to be canonicalized in the sense that the cycles are rotated such that the smallest element is first, the cycles themselves are sorted lexicographically, and there are no cycles of length <= 2.
     mapping: OnceLock<Vec<usize>>,
+    passive: OnceLock<Vec<usize>>,
     cycles: OnceLock<Vec<Vec<usize>>>,
 }
 
@@ -203,6 +206,27 @@ fn mk_minimal(mapping: &mut Vec<usize>) {
     }
 }
 
+/// Rotate each cycle such that the smallest element is first, sort the cycles lexicographically, and remove degenerate zero or one length cycles
+fn canonicalize_cycles(cycles: &mut Vec<Vec<usize>>) {
+    let mut i = 0;
+
+    while i < cycles.len() {
+        if cycles[i].len() < 2 {
+            cycles.swap_remove(i);
+        } else {
+            i += 1;
+        }
+    }
+
+    for cycle in &mut *cycles {
+        let (i, _) = cycle.iter().enumerate().min_by_key(|(_, v)| **v).unwrap();
+
+        cycle.rotate_left(i);
+    }
+
+    cycles.sort_unstable();
+}
+
 impl Permutation {
     /// Create a permutation that represents the do-nothing permutation.
     #[must_use]
@@ -210,7 +234,7 @@ impl Permutation {
         Self::from_mapping(Vec::new())
     }
 
-    /// Create a permutation using mapping notation. `mapping` is a list of facelet indices where the index is the facelet and the value is the facelet it permutes to.
+    /// Create a permutation using _active_ mapping notation. `mapping` is a list of facelet indices where the index is the facelet and the value is the facelet it permutes to.
     ///
     /// # Panics
     ///
@@ -226,6 +250,28 @@ impl Permutation {
         Permutation {
             facelet_count,
             mapping: OnceLock::from(mapping),
+            passive: OnceLock::new(),
+            cycles: OnceLock::new(),
+        }
+    }
+
+    /// Create a permutation using _passive_ mapping notation. `state` shows which facelet indices would be in which positions after applying the permutation to identity.
+    ///
+    /// # Panics
+    ///
+    /// This function will panic if the mapping is not a valid permutation (i.e. if it contains duplicates or is not a complete mapping)
+    #[must_use]
+    pub fn from_state(mut state: Vec<usize>) -> Permutation {
+        mk_minimal(&mut state);
+
+        let facelet_count = state.len();
+
+        assert!(state.iter().all_unique());
+
+        Permutation {
+            facelet_count,
+            mapping: OnceLock::new(),
+            passive: OnceLock::from(state),
             cycles: OnceLock::new(),
         }
     }
@@ -237,7 +283,7 @@ impl Permutation {
     /// This function will panic if the cycles are not a valid permutation (i.e. if it contains duplicates or is not a complete mapping)
     #[must_use]
     pub fn from_cycles(mut cycles: Vec<Vec<usize>>) -> Permutation {
-        cycles.retain(|cycle| cycle.len() > 1);
+        canonicalize_cycles(&mut cycles);
 
         assert!(cycles.iter().flatten().all_unique());
 
@@ -246,18 +292,25 @@ impl Permutation {
         Permutation {
             facelet_count,
             mapping: OnceLock::new(),
+            passive: OnceLock::new(),
             cycles: OnceLock::from(cycles),
         }
     }
 
-    /// Get the permutation in mapping notation where `.mapping().get(facelet)` gives where the facelet permutes to
+    /// Get the permutation as a mapping between stickers where `.goes_to().get(facelet)` gives where the facelet permutes to.
+    ///
+    /// This mapping is in _active_ notion, meaning that each element of the mapping represents where a given facelet _goes to_. In essence, this is representing the permutation as an _action_.
     #[expect(clippy::missing_panics_doc)]
-    pub fn mapping(&self) -> Mapping<'_> {
+    pub fn goes_to(&self) -> Mapping<'_> {
         let mapping = self.mapping.get_or_init(|| {
+            if let Some(state) = self.passive.get() {
+                return inv_mapping(state);
+            }
+
             let cycles = self
                 .cycles
                 .get()
-                .expect("either `mapping` or `cycles` to be defined");
+                .expect("`mapping`, `passive`, or `cycles` to be defined");
 
             // Start with the identity permutation
             let mut mapping = (0..self.facelet_count).collect::<Vec<_>>();
@@ -274,14 +327,49 @@ impl Permutation {
         Mapping { mapping }
     }
 
+    /// Get the permutation as a mapping between stickers where `.comes_from().get(spot)` gives what facelet is in the `spot` position after applying the permutation to identity.
+    ///
+    /// This mapping is in _passive_ notation, meaning that each element of the mapping represents where the facelet _comes from_. In essence, this is representing the permutation as a _state_. Rubik's cubes naturally present themselves in passive notation.
+    #[expect(clippy::missing_panics_doc)]
+    pub fn comes_from(&self) -> Mapping<'_> {
+        let mapping = self.passive.get_or_init(|| {
+            if let Some(state) = self.mapping.get() {
+                return inv_mapping(state);
+            }
+
+            let cycles = self
+                .cycles
+                .get()
+                .expect("`mapping`, `passive`, or `cycles` to be defined");
+
+            // Start with the identity permutation
+            let mut mapping = (0..self.facelet_count).collect::<Vec<_>>();
+
+            for cycle in cycles {
+                for (&start, &end) in cycle.iter().cycle().tuple_windows().take(cycle.len()) {
+                    mapping[end] = start;
+                }
+            }
+
+            mapping
+        });
+
+        Mapping { mapping }
+    }
+
     /// Get the permutation in cycles notation
     #[expect(clippy::missing_panics_doc)]
     pub fn cycles(&self) -> &[Vec<usize>] {
         self.cycles.get_or_init(|| {
-            let mapping = self
-                .mapping
-                .get()
-                .expect("either `mapping` or `cycles` to be defined");
+            let (mapping, is_passive) = match self.mapping.get() {
+                Some(v) => (v, false),
+                None => (
+                    self.passive
+                        .get()
+                        .expect("`mapping`, `passive`, or `cycles` to be defined"),
+                    true,
+                ),
+            };
             let mapping = Mapping { mapping };
 
             let mut covered = vec![false; mapping.minimal().len()];
@@ -308,12 +396,30 @@ impl Permutation {
                 }
 
                 if cycle.len() > 1 {
+                    if is_passive {
+                        cycle.reverse();
+                    }
+
                     cycles.push(cycle);
                 }
             }
 
+            canonicalize_cycles(&mut cycles);
+
             cycles
         })
+    }
+
+    pub fn invert(&mut self) {
+        mem::swap(&mut self.mapping, &mut self.passive);
+
+        if let Some(cycles) = self.cycles.get_mut() {
+            for cycle in &mut *cycles {
+                cycle.reverse();
+            }
+
+            canonicalize_cycles(cycles);
+        }
     }
 
     /// Find the result of applying the permutation to the identity `power` times.
@@ -321,6 +427,20 @@ impl Permutation {
     /// This calculates the value in O(1) time with respect to `power`.
     #[expect(clippy::missing_panics_doc)]
     pub fn exponentiate(&mut self, power: Int<I>) {
+        if power == Int::<I>::zero() {
+            *self = Permutation::identity();
+        }
+
+        if power < Int::<I>::zero() {
+            self.invert();
+        }
+
+        let power = power.abs();
+
+        if power == Int::<U>::one() {
+            return;
+        }
+
         self.cycles();
         let mut mapping = self
             .mapping
@@ -339,11 +459,12 @@ impl Permutation {
         mk_minimal(&mut mapping);
 
         self.mapping = OnceLock::from(mapping);
+        self.passive = OnceLock::new();
         self.cycles = OnceLock::new();
     }
 
     fn mapping_mut(&mut self) -> &mut Vec<usize> {
-        self.mapping();
+        self.goes_to();
 
         self.mapping.get_mut().unwrap()
     }
@@ -351,7 +472,7 @@ impl Permutation {
     /// Compose another permutation into this permutation
     pub fn compose_into(&mut self, other: &Permutation) {
         let my_mapping = self.mapping_mut();
-        let other_mapping = other.mapping();
+        let other_mapping = other.goes_to();
 
         while my_mapping.len() < other_mapping.mapping.len() {
             my_mapping.push(my_mapping.len());
@@ -363,8 +484,9 @@ impl Permutation {
 
         mk_minimal(my_mapping);
 
-        // Invalidate `cycles`
+        // Invalidate `cycles` and `passive`
         self.cycles = OnceLock::new();
+        self.passive = OnceLock::new();
     }
 }
 
@@ -398,9 +520,19 @@ impl<'a> Mapping<'a> {
     }
 }
 
+fn inv_mapping(mapping: &[usize]) -> Vec<usize> {
+    let mut inv_mapping = vec![0; mapping.len()];
+
+    for (i, v) in mapping.iter().copied().enumerate() {
+        inv_mapping[v] = i;
+    }
+
+    inv_mapping
+}
+
 impl PartialEq for Permutation {
     fn eq(&self, other: &Self) -> bool {
-        self.mapping().minimal() == other.mapping().minimal()
+        self.goes_to().minimal() == other.goes_to().minimal()
     }
 }
 
@@ -408,7 +540,7 @@ impl Eq for Permutation {}
 
 impl Hash for Permutation {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        self.mapping().minimal().hash(state);
+        self.goes_to().minimal().hash(state);
     }
 }
 
@@ -568,6 +700,48 @@ mod tests {
         permutations::{Permutation, PermutationGroup},
         puzzle_geometry::parsing::puzzle,
     };
+
+    #[test]
+    fn internal_conversions() {
+        // active -> passive
+        assert_eq!(
+            Permutation::from_mapping(vec![3, 0, 2, 1])
+                .comes_from()
+                .minimal(),
+            &[1, 3, 2, 0]
+        );
+        // active -> cycles
+        assert_eq!(
+            Permutation::from_mapping(vec![3, 0, 2, 1]).cycles(),
+            [vec![0, 3, 1]]
+        );
+        // passive -> mapping
+        assert_eq!(
+            Permutation::from_state(vec![1, 3, 2, 0])
+                .goes_to()
+                .minimal(),
+            &[3, 0, 2, 1]
+        );
+        // passive -> cycles
+        assert_eq!(
+            Permutation::from_state(vec![1, 3, 2, 0]).cycles(),
+            [vec![0, 3, 1]]
+        );
+        // cycles -> mapping
+        assert_eq!(
+            Permutation::from_cycles(vec![vec![0, 3, 1]])
+                .goes_to()
+                .minimal(),
+            &[3, 0, 2, 1]
+        );
+        // cycles -> passive
+        assert_eq!(
+            Permutation::from_cycles(vec![vec![0, 3, 1]])
+                .comes_from()
+                .minimal(),
+            &[1, 3, 2, 0]
+        );
+    }
 
     #[test]
     fn exponentiation() {

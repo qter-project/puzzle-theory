@@ -90,7 +90,7 @@ impl Stabilizer {
     #[must_use]
     fn is_member(&self, mut permutation: Permutation) -> bool {
         let rep = permutation
-            .mapping()
+            .goes_to()
             .get(self.stabilizes);
 
         let find_info = self.coset_reps.find(rep);
@@ -113,7 +113,7 @@ impl Stabilizer {
     #[must_use]
     fn solution(&self, mut permutation: Permutation) -> Vec<&Permutation> {
         let rep = permutation
-            .mapping()
+            .goes_to()
             .get(self.stabilizes);
 
         let find_info = self.coset_reps.find(rep);
@@ -161,9 +161,9 @@ impl Stabilizer {
         self.generating_set.push(generator);
         let generator = self.generating_set.last().unwrap();
 
-        let mapping = generator.mapping();
+        let mapping = generator.goes_to();
         let mut inv = generator.clone();
-        inv.exponentiate(-Int::<I>::one());
+        inv.invert();
 
         // Find stickers that are made newly in orbit by this generator; this only does the first level of BFS
         let mut newly_in_orbit = VecDeque::new();
@@ -181,10 +181,10 @@ impl Stabilizer {
         // Complete the BFS and find everything new in orbit
         while let Some(spot) = newly_in_orbit.pop_front() {
             for perm in &self.generating_set {
-                let goes_to = perm.mapping().get(spot);
+                let goes_to = perm.goes_to().get(spot);
                 if self.coset_reps.find(goes_to).root_idx() != self.stabilizes {
                     let mut inv_alg = perm.clone();
-                    inv_alg.exponentiate(-Int::<I>::one());
+                    inv_alg.invert();
                     self.coset_reps.union(spot, goes_to, inv_alg);
                     newly_in_orbit.push_back(goes_to);
                 }
@@ -202,12 +202,12 @@ impl Stabilizer {
                 continue;
             };
 
-            rep.exponentiate(-Int::<I>::one());
+            rep.invert();
 
             for generator in &self.generating_set {
                 let mut new_generator = rep.clone();
                 new_generator.compose_into(generator);
-                self.inverse_rep_to(new_generator.mapping().get(self.stabilizes), &mut new_generator)
+                self.inverse_rep_to(new_generator.goes_to().get(self.stabilizes), &mut new_generator)
                     .unwrap();
                 self.next.as_mut().unwrap().extend(new_generator);
             }

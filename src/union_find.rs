@@ -59,7 +59,7 @@ impl PathInfo for Permutation {
 
     fn remove_prefix(path: &mut Self, prefix: &Self) {
         let mut inv = prefix.to_owned();
-        inv.exponentiate(-Int::<I>::one());
+        inv.invert();
         inv.compose_into(path);
         *path = inv;
     }
