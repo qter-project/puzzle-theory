@@ -518,6 +518,11 @@ impl<'a> Mapping<'a> {
         assert!(self.mapping.last().is_none_or(|v| *v != self.mapping.len()));
         self.mapping
     }
+
+    /// An infinite iterator over the mapping
+    pub fn iter_infinite(self) -> impl Iterator<Item = usize> {
+        (0..).map(move |i| self.get(i))
+    }
 }
 
 fn inv_mapping(mapping: &[usize]) -> Vec<usize> {
