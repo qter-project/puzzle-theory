@@ -157,14 +157,45 @@ impl PermutationGroup {
 
 /// An element of a permutation group
 #[derive(Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Permutation {
     pub(crate) facelet_count: usize,
     // It is required that one of these three must be defined
     // `mapping` and `passive` are also required to be minimal in the sense that there are no facelets that map to themselves at the end of the array
     // `cycles` is required to be canonicalized in the sense that the cycles are rotated such that the smallest element is first, the cycles themselves are sorted lexicographically, and there are no cycles of length <= 2.
+    #[cfg_attr(feature = "serde", serde(with = "serde_once_lock"))]
     mapping: OnceLock<Vec<usize>>,
+    #[cfg_attr(feature = "serde", serde(with = "serde_once_lock"))]
     passive: OnceLock<Vec<usize>>,
+    #[cfg_attr(feature = "serde", serde(with = "serde_once_lock"))]
     cycles: OnceLock<Vec<Vec<usize>>>,
+}
+
+#[cfg(feature = "serde")]
+mod serde_once_lock {
+    use std::sync::OnceLock;
+    use serde::{Serialize, Serializer, Deserialize, Deserializer};
+
+    pub fn serialize<T, S>(lock: &OnceLock<T>, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        T: Serialize,
+        S: Serializer,
+    {
+        lock.get().serialize(serializer)
+    }
+
+    pub fn deserialize<'de, T, D>(deserializer: D) -> Result<OnceLock<T>, D::Error>
+    where
+        T: Deserialize<'de>,
+        D: Deserializer<'de>,
+    {
+        let value = Option::<T>::deserialize(deserializer)?;
+        let lock = OnceLock::new();
+        if let Some(v) = value {
+            let _ = lock.set(v);
+        }
+        Ok(lock)
+    }
 }
 
 impl core::fmt::Display for Permutation {
