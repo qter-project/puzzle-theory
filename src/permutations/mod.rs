@@ -2,9 +2,11 @@ use std::{
     collections::HashMap,
     hash::Hash,
     mem,
+    str::FromStr,
     sync::{Arc, OnceLock},
 };
 
+use chumsky::{Parser, prelude::*};
 use internment::ArcIntern;
 use itertools::Itertools;
 
@@ -311,21 +313,29 @@ impl Permutation {
     ///
     /// # Panics
     ///
-    /// This function will panic if the cycles are not a valid permutation (i.e. if it contains duplicates or is not a complete mapping)
+    /// This function will panic if the cycles contain duplicate numbers
     #[must_use]
-    pub fn from_cycles(mut cycles: Vec<Vec<usize>>) -> Permutation {
+    pub fn from_cycles(cycles: Vec<Vec<usize>>) -> Permutation {
+        Self::try_from_cycles(cycles).unwrap()
+    }
+
+    /// Create a permutation using cycles notation. `cycles` is a list of cycles where each cycle is a list of facelet indices. This method will return `None` if the list of cycles repeats numbers.
+    #[must_use]
+    pub fn try_from_cycles(mut cycles: Vec<Vec<usize>>) -> Option<Permutation> {
         canonicalize_cycles(&mut cycles);
 
-        assert!(cycles.iter().flatten().all_unique());
+        if !cycles.iter().flatten().all_unique() {
+            return None;
+        }
 
         let facelet_count = cycles.iter().flatten().max().map_or(0, |v| v + 1);
 
-        Permutation {
+        Some(Permutation {
             facelet_count,
             mapping: OnceLock::new(),
             passive: OnceLock::new(),
             cycles: OnceLock::from(cycles),
-        }
+        })
     }
 
     /// Get the permutation as a mapping between stickers where `.goes_to().get(facelet)` gives where the facelet permutes to.
@@ -580,6 +590,48 @@ impl Hash for Permutation {
     }
 }
 
+fn whitespace<'src>() -> impl Parser<'src, &'src str, (), extra::Err<Rich<'src, char>>> {
+    any().filter(|c: &char| c.is_whitespace()).repeated()
+}
+
+fn digit<'src>() -> impl Parser<'src, &'src str, usize, extra::Err<Rich<'src, char>>> {
+    any()
+        .filter(|c: &char| c.is_ascii_digit())
+        .repeated()
+        .collect::<String>()
+        .try_map(|v, span| v.parse::<usize>().map_err(|v| Rich::custom(span, v)))
+        .padded_by(whitespace())
+}
+
+fn cycle_parser<'src>() -> impl Parser<'src, &'src str, Vec<usize>, extra::Err<Rich<'src, char>>> {
+    digit()
+        .separated_by(just(','))
+        .allow_trailing()
+        .collect()
+        .delimited_by(just('('), whitespace().then(just(')')))
+}
+
+fn cycles_parser<'src>()
+-> impl Parser<'src, &'src str, Vec<Vec<usize>>, extra::Err<Rich<'src, char>>> {
+    cycle_parser()
+        .separated_by(whitespace())
+        .allow_leading()
+        .allow_trailing()
+        .collect()
+}
+
+impl FromStr for Permutation {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match cycles_parser().parse(s).into_result() {
+            Ok(cycles) => Permutation::try_from_cycles(cycles)
+                .ok_or_else(|| "The cycles repeat some numbers".to_owned()),
+            Err(errs) => Err(errs.into_iter().map(|v| v.to_string()).join("\n")),
+        }
+    }
+}
+
 /// Represents a sequence of moves to apply to a puzzle in the `Program`
 #[derive(Clone)]
 pub struct Algorithm {
@@ -809,45 +861,46 @@ mod tests {
     }
 
     #[test]
+    fn perm_parsing() {
+        assert_eq!(
+            "(1, 2) (3, 4)".parse::<Permutation>().unwrap(),
+            Permutation::from_cycles(vec![vec![1, 2], vec![3, 4]])
+        );
+
+        assert_eq!(
+            "(   \t 1, 2)(3, 4)    ".parse::<Permutation>().unwrap(),
+            Permutation::from_cycles(vec![vec![1, 2], vec![3, 4]])
+        );
+
+        assert_eq!(
+            "   (1,2)(3,4, )".parse::<Permutation>().unwrap(),
+            Permutation::from_cycles(vec![vec![1, 2], vec![3, 4]])
+        );
+
+        assert_eq!(
+            "   (1,2)(3,4, )".parse::<Permutation>().unwrap(),
+            Permutation::from_cycles(vec![vec![1, 2], vec![3, 4]])
+        );
+
+        assert!("(,1,2)".parse::<Permutation>().is_err());
+        assert!("1,2".parse::<Permutation>().is_err());
+        assert!("(((1,2)".parse::<Permutation>().is_err());
+        assert!("(1,2)(2,3)".parse::<Permutation>().is_err());
+    }
+
+    #[test]
     fn mk_group() {
         let mut generators = HashMap::new();
 
-        generators.insert(
-            ArcIntern::from("A"),
-            Permutation::from_cycles(vec![vec![0, 1, 2]]),
-        );
-        generators.insert(
-            ArcIntern::from("B"),
-            Permutation::from_cycles(vec![vec![3, 4, 5]]),
-        );
-        generators.insert(
-            ArcIntern::from("C"),
-            Permutation::from_cycles(vec![vec![5, 6, 7]]),
-        );
-        generators.insert(
-            ArcIntern::from("D"),
-            Permutation::from_cycles(vec![vec![8, 9]]),
-        );
-        generators.insert(
-            ArcIntern::from("E"),
-            Permutation::from_cycles(vec![vec![10, 11, 12, 13]]),
-        );
-        generators.insert(
-            ArcIntern::from("A'"),
-            Permutation::from_cycles(vec![vec![2, 1, 0]]),
-        );
-        generators.insert(
-            ArcIntern::from("B'"),
-            Permutation::from_cycles(vec![vec![5, 4, 3]]),
-        );
-        generators.insert(
-            ArcIntern::from("C'"),
-            Permutation::from_cycles(vec![vec![7, 6, 5]]),
-        );
-        generators.insert(
-            ArcIntern::from("E'"),
-            Permutation::from_cycles(vec![vec![13, 12, 11, 10]]),
-        );
+        generators.insert(ArcIntern::from("A"), "( 0  , 1 , 2,  )".parse().unwrap());
+        generators.insert(ArcIntern::from("B"), "(3, 4, 5,)".parse().unwrap());
+        generators.insert(ArcIntern::from("C"), "(5, 6, 7)".parse().unwrap());
+        generators.insert(ArcIntern::from("D"), "(8, 9)".parse().unwrap());
+        generators.insert(ArcIntern::from("E"), "(10, 11, 12, 13)".parse().unwrap());
+        generators.insert(ArcIntern::from("A'"), "(2, 1, 0)".parse().unwrap());
+        generators.insert(ArcIntern::from("B'"), "(5, 4, 3)".parse().unwrap());
+        generators.insert(ArcIntern::from("C'"), "(7, 6, 5)".parse().unwrap());
+        generators.insert(ArcIntern::from("E'"), "(13, 12, 11, 10)".parse().unwrap());
 
         let _ = PermutationGroup::new(
             vec![
