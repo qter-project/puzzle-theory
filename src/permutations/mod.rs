@@ -175,7 +175,7 @@ impl core::fmt::Display for Permutation {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let cycles = self.cycles();
         if cycles.is_empty() {
-            f.write_str("Id")
+            f.write_str("()")
         } else {
             for cycle in cycles {
                 f.write_str("(")?;
@@ -865,6 +865,11 @@ mod tests {
         assert_eq!(
             "   (1,2)(3,4, )".parse::<Permutation>().unwrap(),
             Permutation::from_cycles(vec![vec![1, 2], vec![3, 4]])
+        );
+
+        assert_eq!(
+            "  (   )   ".parse::<Permutation>().unwrap(),
+            Permutation::identity(),
         );
 
         assert!("(,1,2)".parse::<Permutation>().is_err());
