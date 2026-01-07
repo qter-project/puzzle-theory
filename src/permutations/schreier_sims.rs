@@ -56,6 +56,11 @@ impl StabilizerChain {
         soln.reverse();
         soln
     }
+
+    #[cfg(feature = "rand")]
+    pub fn random<R: rand::Rng + ?Sized>(&self, rng: &mut R) -> Permutation {
+        self.stabilizers.random(rng)
+    }
 }
 
 struct Stabilizer {
@@ -79,8 +84,12 @@ impl Stabilizer {
         }
     }
 
+    fn coset_count(&self) -> usize {
+        self.coset_reps.find(self.stabilizes).set_meta().0
+    }
+
     fn cardinality(&self) -> Int<U> {
-        let mut cardinality = Int::from(self.coset_reps.find(self.stabilizes).set_meta().0);
+        let mut cardinality = Int::from(self.coset_count());
         if let Some(next) = &self.next {
             cardinality *= next.cardinality();
         }
@@ -136,6 +145,34 @@ impl Stabilizer {
             },
             None => vec![other_perm],
         }
+    }
+
+    #[cfg(feature = "rand")]
+    fn random<R: rand::Rng + ?Sized>(&self, rng: &mut R) -> Permutation {
+        let mut prev = match &self.next {
+            Some(next) => next.random(rng),
+            None => Permutation::identity(),
+        };
+
+        let which = rng.random_range(0..self.coset_count());
+
+        let mut count = 0;
+        for i in 0..self.group.facelet_count() {
+            let find_info = self.coset_reps.find(i);
+            if find_info.root_idx() == self.stabilizes {
+                if count == which {
+                    if let Some(perm) = find_info.path_meta() {
+                        prev.compose_into(perm);
+                    }
+
+                    return prev;
+                }
+
+                count += 1;
+            }
+        }
+
+        panic!("Should have found a permutation")
     }
 
     fn inverse_rep_to(&self, rep: usize, alg: &mut Permutation) -> Result<(), ()> {
@@ -308,5 +345,30 @@ mod tests {
             vec![10, 16, 5],
             vec![18, 7, 24]
         ])));
+    }
+
+    #[cfg(feature = "rand")]
+    #[test]
+    fn random() {
+        use std::collections::HashSet;
+
+        use rand::SeedableRng;
+
+        let cube_def = puzzle("3x3").permutation_group();
+        let stabchain = StabilizerChain::new(&cube_def);
+        
+        let mut rng = rand::rngs::SmallRng::from_seed(*b"six seven on a merry rizzmas6767");
+
+        let mut perms = HashSet::new();
+
+        perms.insert(stabchain.random(&mut rng));
+        perms.insert(stabchain.random(&mut rng));
+        perms.insert(stabchain.random(&mut rng));
+        perms.insert(stabchain.random(&mut rng));
+        perms.insert(stabchain.random(&mut rng));
+        perms.insert(stabchain.random(&mut rng));
+
+        // All unique
+        assert_eq!(perms.len(), 6);
     }
 }
