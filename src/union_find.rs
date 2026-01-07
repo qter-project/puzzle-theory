@@ -5,10 +5,7 @@ use std::{
     sync::{RwLock, atomic::{AtomicUsize, Ordering}},
 };
 
-use crate::{
-    numbers::{I, Int},
-    permutations::Permutation,
-};
+use crate::permutations::Permutation;
 
 /// Metadata about each disjoint set
 pub trait SetInfo {

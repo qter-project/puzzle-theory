@@ -5,7 +5,7 @@ use itertools::Itertools;
 
 use crate::permutations::{Permutation, PermutationGroup};
 
-use crate::numbers::{I, Int, U};
+use crate::numbers::{Int, U};
 use crate::union_find::{Cardinality, UnionFind};
 
 static IDENTITY: LazyLock<Permutation> = LazyLock::new(Permutation::identity);
