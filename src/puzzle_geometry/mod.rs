@@ -462,7 +462,7 @@ impl PuzzleGeometry {
             while overall_not_done {
                 overall_not_done = false;
 
-                for generator in group.generators() {
+                for generator in group.generators().sorted_unstable_by_key(|v| ArcIntern::clone(&v.0)) {
                     let mut not_done = true;
 
                     while not_done {
@@ -1298,6 +1298,8 @@ mod tests {
 
         let pieces_data = geometry.pieces_data();
         let orbits = pieces_data.orbits();
+        let ori_nums = pieces_data.orientation_numbers();
+
         assert_eq!(
             orbits,
             &[
@@ -1319,7 +1321,12 @@ mod tests {
                         let twist = orbits[0].pieces()[i].twist().clone();
                         assert_eq!(twist.cycles().len(), 1);
                         assert_eq!(twist.cycles()[0].len(), 3);
-                        assert_eq!(twist.cycles()[0].iter().copied().sorted().collect_vec(), v);
+                        let cycle = &twist.cycles()[0];
+                        assert_eq!(cycle.iter().copied().sorted().collect_vec(), v);
+
+                        assert_eq!(ori_nums[cycle[0]] + 1, ori_nums[cycle[1]]);
+                        assert_eq!(ori_nums[cycle[1]] + 1, ori_nums[cycle[2]]);
+                        assert_eq!(ori_nums[cycle[0]] + 2, ori_nums[cycle[2]]);
 
                         PieceData {
                             stickers: v.into(),
@@ -1346,10 +1353,14 @@ mod tests {
                             ([30, 44], "DR"),
                             ([38, 46], "DB"),
                         ]
-                        .map(|(v, name)| PieceData {
-                            stickers: v.into(),
-                            twist: Permutation::from_cycles(vec![v.into()]),
-                            name: ArcIntern::from(name)
+                        .map(|(v, name)| {
+                            assert_eq!(ori_nums[v[0]] + 1, ori_nums[v[1]]);
+                            
+                            PieceData {
+                                stickers: v.into(),
+                                twist: Permutation::from_cycles(vec![v.into()]),
+                                name: ArcIntern::from(name)
+                            }
                         })
                     ),
                     orientation_count: 2
