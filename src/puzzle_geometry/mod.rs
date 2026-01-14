@@ -219,6 +219,11 @@ impl PieceData {
     pub fn twist(&self) -> &Permutation {
         &self.twist
     }
+
+    #[must_use]
+    pub fn name(&self) -> &ArcIntern<str> {
+        &self.name
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
