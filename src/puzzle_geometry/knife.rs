@@ -5,15 +5,23 @@ use itertools::Itertools;
 
 use super::{
     Face, FaceSubspaceInfo, Point, PuzzleGeometryError,
-    num::{Matrix, Num, Vector},
+    num::{Matrix, Num, Vector}, Result,
 };
 
+type Edge2 = (Vector<2>, Vector<2>);
+
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub enum Region {
+    /// The shape is inside the region with the given name
+    Inside(ArcIntern<str>),
+    /// The point is outside any relevant regions
+    Outside
+}
+
 /// Defines a generic cut surface; may or may not be planar or have only two regions.
-///
-/// Regions are represented by an `Option<ArcIntern<str>>`. A point "outside the region" can be represented by None. Having multiple regions in the same `CutSurface` is allowed.
 pub trait CutSurface: core::fmt::Debug {
-    /// Get the region that a point is in
-    fn region(&self, point: Point) -> Option<ArcIntern<str>>;
+    /// Get the region that a point is in. The point must not be on the boundary as given by `Self::on_boundary`.
+    fn region(&self, point: Point) -> Region;
 
     /// Tell whether a point is on the boundary of a cut plane
     fn on_boundary(&self, point: Point) -> bool;
@@ -33,18 +41,18 @@ pub struct PlaneCut {
 }
 
 impl CutSurface for PlaneCut {
-    fn region(&self, point: Point) -> Option<ArcIntern<str>> {
+    fn region(&self, point: Point) -> Region {
         match self
             .normal
             .clone()
             .dot(point.0 - self.spot.clone())
             .cmp_zero()
         {
-            std::cmp::Ordering::Less => None,
+            std::cmp::Ordering::Less => Region::Outside,
             std::cmp::Ordering::Equal => {
                 panic!("Argument to region should not be exactly on the boundary")
             }
-            std::cmp::Ordering::Greater => Some(ArcIntern::clone(&self.name)),
+            std::cmp::Ordering::Greater => Region::Inside(ArcIntern::clone(&self.name)),
         }
     }
 
@@ -133,7 +141,7 @@ pub(crate) fn do_cut<S: CutSurface + ?Sized>(
     surface: &S,
     face: &Face,
     subspace_info: &FaceSubspaceInfo,
-) -> Result<Vec<(Face, Option<ArcIntern<str>>)>, PuzzleGeometryError> {
+) -> Result<Vec<(Face, Region)>> {
     assert!(!face.points.is_empty());
 
     // Convert the list of 3d points into a list of 2d edges, split on boundaries, with the edge's region included.
@@ -213,7 +221,7 @@ pub(crate) fn do_cut<S: CutSurface + ?Sized>(
 ///
 /// This is necessary because with the color pattern [Some(A), None, Some(A), None], `take_face_out` will separate that into two faces even though it shouldn't do that.
 fn recolor_border_edges(
-    edges: &mut Cycle<((Vector<2>, Vector<2>), Option<Option<ArcIntern<str>>>)>,
+    edges: &mut Cycle<(Edge2, Option<Region>)>,
 ) {
     let mut i = 0;
 
@@ -233,11 +241,11 @@ fn recolor_border_edges(
 }
 
 fn take_face_out<S: CutSurface + ?Sized>(
-    edges: &mut Cycle<((Vector<2>, Vector<2>), Option<Option<ArcIntern<str>>>)>,
+    edges: &mut Cycle<(Edge2, Option<Region>)>,
     surface: &S,
     face: &Face,
     subspace_info: &FaceSubspaceInfo,
-) -> Result<(Face, Option<ArcIntern<str>>), PuzzleGeometryError> {
+) -> Result<(Face, Region)> {
     // Find a collection of edges that can be merged
     // This algorithm tries to find a collection of vertices that "peeks out" and comes back to the same region.
     // If a collection of vertices didn't come back to the same region, then it would be impossible to merge them because we couldn't prove that they're the only vertices in the group.
@@ -287,15 +295,15 @@ fn take_face_out<S: CutSurface + ?Sized>(
     #[derive(Debug)]
     enum StateMachine {
         Begin {
-            previous_region: Option<ArcIntern<str>>,
+            previous_region: Region,
         },
         InRegion {
-            previous_region: Option<ArcIntern<str>>,
-            region: Option<ArcIntern<str>>,
+            previous_region: Region,
+            region: Region,
         },
         SeeingWhatsNext {
-            previous_region: Option<ArcIntern<str>>,
-            region: Option<ArcIntern<str>>,
+            previous_region: Region,
+            region: Region,
         },
     }
 
@@ -437,29 +445,29 @@ mod tests {
 
     use internment::ArcIntern;
 
-    use crate::puzzle_geometry::{Face, Point, knife::{PlaneCut, do_cut}, num::Vector};
+    use crate::puzzle_geometry::{Face, Point, knife::{PlaneCut, Region, do_cut}, num::Vector};
 
     use super::{Cycle, recolor_border_edges};
 
     #[test]
     fn recolor() {
         let mut edges = Cycle(VecDeque::from(vec![
-            ((Vector::zero(), Vector::zero()), Some(None)),
+            ((Vector::zero(), Vector::zero()), Some(Region::Outside)),
             ((Vector::zero(), Vector::zero()), None),
             ((Vector::zero(), Vector::zero()), None),
             ((Vector::zero(), Vector::zero()), None),
             (
                 (Vector::zero(), Vector::zero()),
-                Some(Some(ArcIntern::from("Green"))),
+                Some(Region::Inside(ArcIntern::from("Green"))),
             ),
             ((Vector::zero(), Vector::zero()), None),
             ((Vector::zero(), Vector::zero()), None),
             ((Vector::zero(), Vector::zero()), None),
             (
                 (Vector::zero(), Vector::zero()),
-                Some(Some(ArcIntern::from("Green"))),
+                Some(Region::Inside(ArcIntern::from("Green"))),
             ),
-            ((Vector::zero(), Vector::zero()), Some(None)),
+            ((Vector::zero(), Vector::zero()), Some(Region::Outside)),
             ((Vector::zero(), Vector::zero()), None),
             ((Vector::zero(), Vector::zero()), None),
             ((Vector::zero(), Vector::zero()), None),
@@ -478,9 +486,9 @@ mod tests {
                 .iter()
                 .skip(3)
                 .take(5)
-                .all(|v| v.1 == Some(Some(ArcIntern::from("Green"))))
+                .all(|v| v.1 == Some(Region::Inside(ArcIntern::from("Green"))))
         );
-        assert!(edges.0.iter().skip(8).take(5).all(|v| v.1 == Some(None)));
+        assert!(edges.0.iter().skip(8).take(5).all(|v| v.1 == Some(Region::Outside)));
     }
 
     #[test]
@@ -530,14 +538,14 @@ mod tests {
         };
 
         if cutted[0].0.epsilon_eq(&face1) {
-            assert_eq!(cutted[0].1, Some(ArcIntern::from("R")));
+            assert_eq!(cutted[0].1, Region::Inside(ArcIntern::from("R")));
             assert!(cutted[1].0.epsilon_eq(&face2));
-            assert_eq!(cutted[1].1, None);
+            assert_eq!(cutted[1].1, Region::Outside);
         } else {
             assert!(cutted[1].0.epsilon_eq(&face1));
-            assert_eq!(cutted[1].1, Some(ArcIntern::from("R")));
+            assert_eq!(cutted[1].1, Region::Inside(ArcIntern::from("R")));
             assert!(cutted[0].0.epsilon_eq(&face2));
-            assert_eq!(cutted[0].1, None);
+            assert_eq!(cutted[0].1, Region::Outside);
         }
     }
 }

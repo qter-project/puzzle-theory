@@ -24,3 +24,10 @@
 - Parse our modified puzzlegeometry definition string
 - Spherical cuts
 
+## Misc
+
+- Refactor the ksolve format
+  - Zero based
+  - Don't require `PuzzleGeometry::ksolve` to do casts
+- Replace internment with sarlacc and newtype some intern types
+- Remove the `Point` newtype

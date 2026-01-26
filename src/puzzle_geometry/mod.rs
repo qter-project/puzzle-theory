@@ -3,9 +3,7 @@ use std::{
 };
 
 use crate::{
-    ksolve::{KSolve, KSolveMove, KSolveSet},
-    permutations::{Permutation, PermutationGroup, schreier_sims::StabilizerChain},
-    span::Span,
+    ksolve::{KSolve, KSolveMove, KSolveSet}, permutations::{Permutation, PermutationGroup, schreier_sims::StabilizerChain}, puzzle_geometry::knife::Region, span::Span
 };
 use edge_cloud::EdgeCloud;
 use internment::ArcIntern;
@@ -42,8 +40,12 @@ pub enum PuzzleGeometryError {
     PuzzleLacksSymmetry(ArcIntern<str>),
 }
 
+type Result<T> = core::result::Result<T, PuzzleGeometryError>;
+
 #[derive(Clone, Debug)]
 pub struct Point(Vector<3>);
+
+type Edge = (Vector<3>, Vector<3>);
 
 #[derive(Clone, Debug)]
 pub struct Face {
@@ -52,7 +54,7 @@ pub struct Face {
 }
 
 impl Face {
-    fn is_valid(&self) -> Result<(), PuzzleGeometryError> {
+    fn is_valid(&self) -> Result<()> {
         // TEST DEGENERACY
 
         if self.points.len() <= 2 {
@@ -107,7 +109,7 @@ impl Face {
         }
     }
 
-    fn edges(&self) -> impl Iterator<Item = (Vector<3>, Vector<3>)> {
+    fn edges(&self) -> impl Iterator<Item = Edge> {
         self.points
             .iter()
             .cycle()
@@ -306,6 +308,9 @@ impl PiecesData {
     }
 }
 
+/// A list of pieces as well as the sum of square distances of those pieces to the center (to enable sorting the orbits by this)
+type OrbitDataIntermediate = (Vec<(ArcIntern<str>, Vec<usize>)>, OnceCell<Num>);
+
 impl PuzzleGeometry {
     /// Get the puzzle as a permutation group over facelets
     pub fn permutation_group(&self) -> Arc<PermutationGroup> {
@@ -401,7 +406,7 @@ impl PuzzleGeometry {
     /// Assigns signature facelets in an unspecified but consistent way
     fn number_facelet_orientations(
         group: &Arc<PermutationGroup>,
-        orbits: &[(Vec<(ArcIntern<str>, Vec<usize>)>, OnceCell<Num>)],
+        orbits: &[OrbitDataIntermediate],
     ) -> (Vec<OriNum>, Vec<usize>) {
         let mut facelet_orientation_numbers: Vec<Option<OriNum>> = vec![None; group.facelet_count()];
         let mut orientation_counts = Vec::new();
@@ -509,7 +514,7 @@ impl PuzzleGeometry {
             }
 
             // Separate pieces into orbits
-            let mut orbits: Vec<(Vec<(ArcIntern<str>, Vec<usize>)>, OnceCell<Num>)> = Vec::new();
+            let mut orbits: Vec<OrbitDataIntermediate> = Vec::new();
 
             'next_piece: for (name, piece) in pieces {
                 let name = ArcIntern::from(name.iter().join(""));
@@ -709,7 +714,7 @@ impl PuzzleGeometryDefinition {
     /// If the validity of the faces is not satisfied, or if the puzzle does
     /// not have the expected symmetries, this function will return an error.
     #[expect(clippy::missing_panics_doc)]
-    pub fn geometry(self) -> Result<PuzzleGeometry, PuzzleGeometryError> {
+    pub fn geometry(self) -> Result<PuzzleGeometry> {
         let mut faces: Vec<(Face, Vector<3>)> = vec![];
         for face in self.polyhedron.0 {
             face.is_valid()?;
@@ -735,7 +740,7 @@ impl PuzzleGeometryDefinition {
                             .into_iter()
                             .map(move |(new_face, name_component)| {
                                 let mut name_components = name_components.clone();
-                                if let Some(component) = name_component {
+                                if let Region::Inside(component) = name_component {
                                     name_components.push(component);
                                 }
                                 (new_face, name_components)
@@ -799,7 +804,7 @@ impl PuzzleGeometryDefinition {
 
             // Narrow down the edges that could potentially map to each other so that we don't have to try all of them
             // Currently, we only classify edges by the distance from the origin of the two endpoints
-            let mut edge_classifications: Vec<((Num, Num), Vec<(Matrix<3, 1>, Matrix<3, 1>)>)> =
+            let mut edge_classifications: Vec<((Num, Num), Vec<Edge>)> =
                 Vec::new();
 
             'next_edge: for edge in &edges {

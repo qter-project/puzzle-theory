@@ -1,3 +1,5 @@
+#![expect(clippy::doc_markdown)] // Lots of false positives
+
 use algebraics::prelude::*;
 use std::{cmp::Ordering, iter, mem, sync::Mutex, thread};
 
@@ -95,9 +97,9 @@ impl Branch {
                 // println!("{below_ratio}—{threshold}—{above_ratio}");
 
                 for factor in mem::take(factors) {
-                    let sc_below = sign_changes_at(&factor.1, below_ratio.clone());
-                    let sc_thresh = sign_changes_at(&factor.1, threshold.clone());
-                    let sc_above = sign_changes_at(&factor.1, above_ratio.clone());
+                    let sc_below = sign_changes_at(&factor.1, &below_ratio);
+                    let sc_thresh = sign_changes_at(&factor.1, &threshold);
+                    let sc_above = sign_changes_at(&factor.1, &above_ratio);
                     // println!("SC {}; {sc_below}—{sc_thresh}—{sc_above}", &factor.0);
 
                     match (sc_below - sc_thresh).cmp(&1) {
@@ -212,9 +214,9 @@ fn mk_vec(num: Num) -> &'static Vector<2> {
 }
 
 // https://en.wikipedia.org/wiki/Sturm%27s_theorem
-fn sign_changes_at(seq: &[Polynomial<BigInt>], ratio: Ratio<BigInt>) -> usize {
+fn sign_changes_at(seq: &[Polynomial<BigInt>], ratio: &Ratio<BigInt>) -> usize {
     seq.iter()
-        .map(|v| v.eval_generic(&ratio, Ratio::zero()).cmp(&Ratio::zero()))
+        .map(|v| v.eval_generic(ratio, Ratio::zero()).cmp(&Ratio::zero()))
         .filter_map(|v| match v {
             Ordering::Less => Some(false),
             Ordering::Equal => None,
