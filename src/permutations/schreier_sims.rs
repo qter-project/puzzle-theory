@@ -99,7 +99,7 @@ impl Stabilizer {
     #[must_use]
     fn is_member(&self, mut permutation: Permutation) -> bool {
         let rep = permutation
-            .goes_to()
+            .mapping()
             .get(self.stabilizes);
 
         let find_info = self.coset_reps.find(rep);
@@ -122,7 +122,7 @@ impl Stabilizer {
     #[must_use]
     fn solution(&self, mut permutation: Permutation) -> Vec<&Permutation> {
         let rep = permutation
-            .goes_to()
+            .mapping()
             .get(self.stabilizes);
 
         let find_info = self.coset_reps.find(rep);
@@ -198,7 +198,7 @@ impl Stabilizer {
         self.generating_set.push(generator);
         let generator = self.generating_set.last().unwrap();
 
-        let mapping = generator.goes_to();
+        let mapping = generator.mapping();
         let mut inv = generator.clone();
         inv.invert();
 
@@ -218,7 +218,7 @@ impl Stabilizer {
         // Complete the BFS and find everything new in orbit
         while let Some(spot) = newly_in_orbit.pop_front() {
             for perm in &self.generating_set {
-                let goes_to = perm.goes_to().get(spot);
+                let goes_to = perm.mapping().get(spot);
                 if self.coset_reps.find(goes_to).root_idx() != self.stabilizes {
                     let mut inv_alg = perm.clone();
                     inv_alg.invert();
@@ -244,7 +244,7 @@ impl Stabilizer {
             for generator in &self.generating_set {
                 let mut new_generator = rep.clone();
                 new_generator.compose_into(generator);
-                self.inverse_rep_to(new_generator.goes_to().get(self.stabilizes), &mut new_generator)
+                self.inverse_rep_to(new_generator.mapping().get(self.stabilizes), &mut new_generator)
                     .unwrap();
                 self.next.as_mut().unwrap().extend(new_generator);
             }

@@ -473,7 +473,7 @@ impl PuzzleGeometry {
                     while not_done {
                         not_done = false;
 
-                        for (from, to) in generator.1.goes_to().all_changes() {
+                        for (from, to) in generator.1.mapping().all_changes() {
                             if let Some(number) = facelet_orientation_numbers[from]
                                 && facelet_orientation_numbers[to].is_none()
                             {
@@ -662,7 +662,7 @@ impl PuzzleGeometry {
                     let mut this_orbit_transform = Vec::new();
 
                     for piece in orbit.pieces() {
-                        let first_one_goes_to = perm.goes_to().get(piece.stickers[0]);
+                        let first_one_goes_to = perm.mapping().get(piece.stickers[0]);
 
                         let starting_orientation = pieces_data.orientation_numbers()[piece.stickers[0]];
                         let new_orientation = pieces_data.orientation_numbers()[first_one_goes_to];

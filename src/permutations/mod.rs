@@ -147,7 +147,7 @@ impl PermutationGroup {
             let mut union_find = UnionFind::new(self.facelet_count());
 
             for (_, generator) in self.generators() {
-                for (from, to) in generator.goes_to().all_changes() {
+                for (from, to) in generator.mapping().all_changes() {
                     union_find.union(from, to, ());
                 }
             }
@@ -323,11 +323,11 @@ impl Permutation {
         })
     }
 
-    /// Get the permutation as a mapping between stickers where `.goes_to().get(facelet)` gives where the facelet permutes to.
+    /// Get the permutation as a mapping between stickers where `.mapping().get(facelet)` gives where the facelet permutes to.
     ///
     /// This mapping is in _active_ notion, meaning that each element of the mapping represents where a given facelet _goes to_. In essence, this is representing the permutation as an _action_.
     #[expect(clippy::missing_panics_doc)]
-    pub fn goes_to(&self) -> Mapping<'_> {
+    pub fn mapping(&self) -> Mapping<'_> {
         let mapping = self.mapping.get_or_init(|| {
             if let Some(state) = self.passive.get() {
                 return inv_mapping(state);
@@ -357,7 +357,7 @@ impl Permutation {
     ///
     /// This mapping is in _passive_ notation, meaning that each element of the mapping represents where the facelet _comes from_. In essence, this is representing the permutation as a _state_. Rubik's cubes naturally present themselves in passive notation.
     #[expect(clippy::missing_panics_doc)]
-    pub fn comes_from(&self) -> Mapping<'_> {
+    pub fn state(&self) -> Mapping<'_> {
         let mapping = self.passive.get_or_init(|| {
             if let Some(state) = self.mapping.get() {
                 return inv_mapping(state);
@@ -490,7 +490,7 @@ impl Permutation {
     }
 
     fn mapping_mut(&mut self) -> &mut Vec<usize> {
-        self.goes_to();
+        self.mapping();
 
         self.mapping.get_mut().unwrap()
     }
@@ -498,7 +498,7 @@ impl Permutation {
     /// Compose another permutation into this permutation
     pub fn compose_into(&mut self, other: &Permutation) {
         let my_mapping = self.mapping_mut();
-        let other_mapping = other.goes_to();
+        let other_mapping = other.mapping();
 
         while my_mapping.len() < other_mapping.mapping.len() {
             my_mapping.push(my_mapping.len());
@@ -563,7 +563,7 @@ fn inv_mapping(mapping: &[usize]) -> Vec<usize> {
 
 impl PartialEq for Permutation {
     fn eq(&self, other: &Self) -> bool {
-        self.goes_to().minimal() == other.goes_to().minimal()
+        self.mapping().minimal() == other.mapping().minimal()
     }
 }
 
@@ -571,7 +571,7 @@ impl Eq for Permutation {}
 
 impl Hash for Permutation {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        self.goes_to().minimal().hash(state);
+        self.mapping().minimal().hash(state);
     }
 }
 
@@ -779,7 +779,7 @@ mod tests {
         // active -> passive
         assert_eq!(
             Permutation::from_mapping(vec![3, 0, 2, 1])
-                .comes_from()
+                .state()
                 .minimal(),
             &[1, 3, 2, 0]
         );
@@ -791,7 +791,7 @@ mod tests {
         // passive -> mapping
         assert_eq!(
             Permutation::from_state(vec![1, 3, 2, 0])
-                .goes_to()
+                .mapping()
                 .minimal(),
             &[3, 0, 2, 1]
         );
@@ -803,14 +803,14 @@ mod tests {
         // cycles -> mapping
         assert_eq!(
             Permutation::from_cycles(vec![vec![0, 3, 1]])
-                .goes_to()
+                .mapping()
                 .minimal(),
             &[3, 0, 2, 1]
         );
         // cycles -> passive
         assert_eq!(
             Permutation::from_cycles(vec![vec![0, 3, 1]])
-                .comes_from()
+                .state()
                 .minimal(),
             &[1, 3, 2, 0]
         );
