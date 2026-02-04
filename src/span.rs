@@ -1,5 +1,6 @@
 use std::{
-    ops::{Deref, DerefMut}, sync::OnceLock
+    ops::{Deref, DerefMut},
+    sync::OnceLock,
 };
 
 use chumsky::{container::Container, extra::Full, input::ValueInput, prelude::*};
@@ -7,19 +8,21 @@ use internment::ArcIntern;
 
 pub type Extra = Full<Rich<'static, char, Span>, (), ()>;
 
-#[derive(Clone)]
-pub struct File(ArcIntern<str>);
-
-impl File {
-    #[must_use]
-    pub fn inner(&self) -> ArcIntern<str> {
-        ArcIntern::clone(&self.0)
-    }
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct File {
+    name: ArcIntern<str>,
+    contents: ArcIntern<str>,
 }
 
-impl<T: Into<ArcIntern<str>>> From<T> for File {
-    fn from(value: T) -> Self {
-        File(value.into())
+impl File {
+    #[must_use] 
+    pub fn new(name: ArcIntern<str>, contents: ArcIntern<str>) -> File {
+        File { name, contents }
+    }
+
+    #[must_use]
+    pub fn inner(&self) -> ArcIntern<str> {
+        ArcIntern::clone(&self.contents)
     }
 }
 
@@ -42,7 +45,7 @@ impl Input<'_> for File {
         this: &mut Self::Cache,
         cursor: &mut Self::Cursor,
     ) -> Option<Self::MaybeToken> {
-        let c = this.0.get(*cursor..)?.chars().next()?;
+        let c = this.contents.get(*cursor..)?.chars().next()?;
 
         *cursor += c.len_utf8();
 
@@ -50,7 +53,7 @@ impl Input<'_> for File {
     }
 
     unsafe fn span(this: &mut Self::Cache, range: std::ops::Range<&Self::Cursor>) -> Self::Span {
-        Span::new(ArcIntern::clone(&this.0), *range.start, *range.end)
+        Span::new(this.clone(), *range.start, *range.end)
     }
 }
 
@@ -64,7 +67,7 @@ impl ValueInput<'_> for File {
 /// A slice of the original source code; to be attached to pieces of data for error reporting
 #[derive(Clone)]
 pub struct Span {
-    source: ArcIntern<str>,
+    source: File,
     start: usize,
     end: usize,
     line_and_col: OnceLock<(usize, usize)>,
@@ -77,10 +80,10 @@ impl Span {
     ///
     /// Panics if the start or end positions are out of bounds, or if the start is greater than the end
     #[must_use]
-    pub fn new(source: ArcIntern<str>, start: usize, end: usize) -> Span {
+    pub fn new(source: File, start: usize, end: usize) -> Span {
         assert!(start <= end);
-        assert!(start <= source.len());
-        assert!(end <= source.len());
+        assert!(start <= source.contents.len());
+        assert!(end <= source.contents.len());
 
         Span {
             source,
@@ -93,11 +96,15 @@ impl Span {
     #[cfg(test)]
     #[must_use]
     pub fn from_static(str: &'static str) -> Span {
-        Span::new(ArcIntern::from(str), 0, str.len())
+        Span::new(
+            File::new(ArcIntern::from("<static>"), ArcIntern::from(str)),
+            0,
+            str.len(),
+        )
     }
 
     pub fn slice(&self) -> &str {
-        &self.source[self.start..self.end]
+        &self.source.contents[self.start..self.end]
     }
 
     pub fn line_and_col(&self) -> (usize, usize) {
@@ -107,7 +114,7 @@ impl Span {
 
             let mut taken = 0;
 
-            for c in self.source.chars() {
+            for c in self.source.contents.chars() {
                 if taken > self.start() {
                     break;
                 }
@@ -140,7 +147,7 @@ impl Span {
         self
     }
 
-    pub fn source(&self) -> ArcIntern<str> {
+    pub fn source(&self) -> File {
         self.source.clone()
     }
 
@@ -173,10 +180,10 @@ impl AsRef<str> for Span {
 }
 
 impl ariadne::Span for Span {
-    type SourceId = ();
+    type SourceId = str;
 
     fn source(&self) -> &Self::SourceId {
-        &()
+        &self.source.name
     }
 
     fn start(&self) -> usize {
@@ -189,7 +196,7 @@ impl ariadne::Span for Span {
 }
 
 impl chumsky::span::Span for Span {
-    type Context = ArcIntern<str>;
+    type Context = File;
     type Offset = usize;
 
     fn new(source: Self::Context, range: std::ops::Range<Self::Offset>) -> Self {

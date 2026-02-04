@@ -1,23 +1,38 @@
 use std::sync::{Arc, LazyLock};
 
-use chumsky::{Parser, error::Rich, extra::Full, prelude::{choice, just}};
+use chumsky::{
+    Parser,
+    error::Rich,
+    extra::Full,
+    prelude::{choice, just},
+};
 use internment::ArcIntern;
 
 use crate::{
     puzzle_geometry::{
-        PuzzleDescriptionString, PuzzleGeometry, PuzzleGeometryDefinition, knife::{CutSurface, PlaneCut},
-        num::{Num, Vector}, shapes::{CUBE, DODECAHEDRON, TETRAHEDRON},
+        PuzzleDescriptionString, PuzzleGeometry, PuzzleGeometryDefinition,
+        knife::{CutSurface, PlaneCut},
+        num::{Num, Vector},
+        shapes::{CUBE, DODECAHEDRON, TETRAHEDRON},
     },
     span::{File, Span, WithSpan},
 };
 
 /// Parse a puzzle definition
-#[must_use] 
-pub fn puzzle_definition() -> impl Parser<'static, File, WithSpan<Arc<PuzzleGeometry>>, Full<Rich<'static, char, Span>, (), ()>> {
+#[must_use]
+pub fn puzzle_definition()
+-> impl Parser<'static, File, WithSpan<Arc<PuzzleGeometry>>, Full<Rich<'static, char, Span>, (), ()>>
+{
     choice((
-        just("3x3").to_span().map(|span: Span| span.with(Arc::clone(&*THREE_BY_THREE))),
-        just("pyraminx").to_span().map(|span: Span| span.with(Arc::clone(&*PYRAMINX))),
-        just("megaminx").to_span().map(|span: Span| span.with(Arc::clone(&*MEGAMINX))),
+        just("3x3")
+            .to_span()
+            .map(|span: Span| span.with(Arc::clone(&*THREE_BY_THREE))),
+        just("pyraminx")
+            .to_span()
+            .map(|span: Span| span.with(Arc::clone(&*PYRAMINX))),
+        just("megaminx")
+            .to_span()
+            .map(|span: Span| span.with(Arc::clone(&*MEGAMINX))),
     ))
 }
 
@@ -28,7 +43,10 @@ pub fn puzzle_definition() -> impl Parser<'static, File, WithSpan<Arc<PuzzleGeom
 /// Panics if the definition is invalid.
 #[must_use]
 pub fn puzzle(def: &'static str) -> WithSpan<Arc<PuzzleGeometry>> {
-    puzzle_definition().parse(File::from(def)).into_output().unwrap()
+    puzzle_definition()
+        .parse(File::new(ArcIntern::from("<static>"), ArcIntern::from(def)))
+        .into_output()
+        .unwrap()
 }
 
 static THREE_BY_THREE: LazyLock<Arc<PuzzleGeometry>> = LazyLock::new(|| {
@@ -66,78 +84,98 @@ static THREE_BY_THREE: LazyLock<Arc<PuzzleGeometry>> = LazyLock::new(|| {
                 name: ArcIntern::from("L"),
             }),
         ],
-        definition: Span::new(ArcIntern::from("3x3x3"), 0, 3),
+        definition: Span::new(
+            File::new(ArcIntern::from("<static>"), ArcIntern::from("3x3x3")),
+            0,
+            5,
+        ),
     };
 
     Arc::new(cube.geometry().unwrap())
 });
 
 static PYRAMINX: LazyLock<Arc<PuzzleGeometry>> = LazyLock::new(|| {
-        let up = TETRAHEDRON.0[0].points[0].clone().0;
-        let down1 = TETRAHEDRON.0[3].points[0].clone().0;
-        let down2 = TETRAHEDRON.0[3].points[1].clone().0;
-        let down3 = TETRAHEDRON.0[3].points[2].clone().0;
+    let up = TETRAHEDRON.0[0].points[0].clone().0;
+    let down1 = TETRAHEDRON.0[3].points[0].clone().0;
+    let down2 = TETRAHEDRON.0[3].points[1].clone().0;
+    let down3 = TETRAHEDRON.0[3].points[2].clone().0;
 
-        let pyraminx = PuzzleGeometryDefinition {
-            polyhedron: TETRAHEDRON.to_owned(),
-            cut_surfaces: vec![
-                Arc::from(PlaneCut {
-                    spot: up.clone() / &Num::from(9),
-                    normal: up.clone(),
-                    name: ArcIntern::from("A"),
-                }),
-                Arc::from(PlaneCut {
-                    spot: down1.clone() / &Num::from(9),
-                    normal: down1.clone(),
-                    name: ArcIntern::from("B"),
-                }),
-                Arc::from(PlaneCut {
-                    spot: down2.clone() / &Num::from(9),
-                    normal: down2.clone(),
-                    name: ArcIntern::from("C"),
-                }),
-                Arc::from(PlaneCut {
-                    spot: down3.clone() / &Num::from(9),
-                    normal: down3.clone(),
-                    name: ArcIntern::from("D"),
-                }),
-                Arc::from(PlaneCut {
-                    spot: (up.clone() / &Num::from(9)) * &Num::from(5),
-                    normal: up.clone(),
-                    name: ArcIntern::from("E"),
-                }),
-                Arc::from(PlaneCut {
-                    spot: (down1.clone() / &Num::from(9)) * &Num::from(5),
-                    normal: down1.clone(),
-                    name: ArcIntern::from("F"),
-                }),
-                Arc::from(PlaneCut {
-                    spot: (down2.clone() / &Num::from(9)) * &Num::from(5),
-                    normal: down2.clone(),
-                    name: ArcIntern::from("G"),
-                }),
-                Arc::from(PlaneCut {
-                    spot: (down3.clone() / &Num::from(9)) * &Num::from(5),
-                    normal: down3.clone(),
-                    name: ArcIntern::from("H"),
-                }),
-            ],
-            definition: Span::new(ArcIntern::from("pyraminx"), 0, 8),
-        };
+    let pyraminx = PuzzleGeometryDefinition {
+        polyhedron: TETRAHEDRON.to_owned(),
+        cut_surfaces: vec![
+            Arc::from(PlaneCut {
+                spot: up.clone() / &Num::from(9),
+                normal: up.clone(),
+                name: ArcIntern::from("A"),
+            }),
+            Arc::from(PlaneCut {
+                spot: down1.clone() / &Num::from(9),
+                normal: down1.clone(),
+                name: ArcIntern::from("B"),
+            }),
+            Arc::from(PlaneCut {
+                spot: down2.clone() / &Num::from(9),
+                normal: down2.clone(),
+                name: ArcIntern::from("C"),
+            }),
+            Arc::from(PlaneCut {
+                spot: down3.clone() / &Num::from(9),
+                normal: down3.clone(),
+                name: ArcIntern::from("D"),
+            }),
+            Arc::from(PlaneCut {
+                spot: (up.clone() / &Num::from(9)) * &Num::from(5),
+                normal: up.clone(),
+                name: ArcIntern::from("E"),
+            }),
+            Arc::from(PlaneCut {
+                spot: (down1.clone() / &Num::from(9)) * &Num::from(5),
+                normal: down1.clone(),
+                name: ArcIntern::from("F"),
+            }),
+            Arc::from(PlaneCut {
+                spot: (down2.clone() / &Num::from(9)) * &Num::from(5),
+                normal: down2.clone(),
+                name: ArcIntern::from("G"),
+            }),
+            Arc::from(PlaneCut {
+                spot: (down3.clone() / &Num::from(9)) * &Num::from(5),
+                normal: down3.clone(),
+                name: ArcIntern::from("H"),
+            }),
+        ],
+        definition: Span::new(
+            File::new(ArcIntern::from("<static>"), ArcIntern::from("pyraminx")),
+            0,
+            8,
+        ),
+    };
 
-        Arc::new(pyraminx.geometry().unwrap())
+    Arc::new(pyraminx.geometry().unwrap())
 });
 
 static MEGAMINX: LazyLock<Arc<PuzzleGeometry>> = LazyLock::new(|| {
     let megaminx = PuzzleGeometryDefinition {
         polyhedron: DODECAHEDRON.clone(),
         // idk if this cut depth is right but WHO CARES HAHAHAH
-        cut_surfaces: DODECAHEDRON.0.iter().map(|v| {
-            let centroid = v.centroid();
-        
-            Arc::from(PlaneCut { spot: v.centroid() * &Num::from(8) / &Num::from(9), normal: centroid, name: ArcIntern::clone(&v.color) }) as Arc::<dyn CutSurface + 'static>
-        }).collect(),
-        definition: Span::new(ArcIntern::from("dodecahedron"), 0, "dodecahedron".len()),
+        cut_surfaces: DODECAHEDRON
+            .0
+            .iter()
+            .map(|v| {
+                let centroid = v.centroid();
+
+                Arc::from(PlaneCut {
+                    spot: v.centroid() * &Num::from(8) / &Num::from(9),
+                    normal: centroid,
+                    name: ArcIntern::clone(&v.color),
+                }) as Arc<dyn CutSurface + 'static>
+            })
+            .collect(),
+        definition: Span::new(
+            File::new(ArcIntern::from("<static>"), ArcIntern::from("dodecahedron")),
+            0,
+            "dodecahedron".len(),
+        ),
     };
 
     Arc::new(megaminx.geometry().unwrap())
