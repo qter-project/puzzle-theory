@@ -8,7 +8,7 @@ use internment::ArcIntern;
 
 pub type Extra = Full<Rich<'static, char, Span>, (), ()>;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct File {
     name: ArcIntern<str>,
     contents: ArcIntern<str>,
