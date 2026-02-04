@@ -24,6 +24,11 @@ impl File {
     pub fn inner(&self) -> ArcIntern<str> {
         ArcIntern::clone(&self.contents)
     }
+
+    #[must_use] 
+    pub fn name(&self) -> ArcIntern<str> {
+        ArcIntern::clone(&self.name)
+    }
 }
 
 impl Input<'_> for File {
@@ -180,7 +185,7 @@ impl AsRef<str> for Span {
 }
 
 impl ariadne::Span for Span {
-    type SourceId = str;
+    type SourceId = ArcIntern<str>;
 
     fn source(&self) -> &Self::SourceId {
         &self.source.name
