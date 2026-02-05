@@ -193,6 +193,7 @@ dependencies = [
  "dashmap",
  "hashbrown 0.15.5",
  "once_cell",
+ "serde",
 ]
 
 [[package]]

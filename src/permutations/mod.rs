@@ -11,13 +11,17 @@ use internment::ArcIntern;
 use itertools::Itertools;
 
 use crate::{
-    numbers::{I, Int, U},
-    union_find::UnionFind,
+    numbers::{I, Int, U}, union_find::UnionFind
 };
 
 pub mod schreier_sims;
 
+#[cfg(feature = "serde")]
+mod serialize;
+
 /// A permutation subgroup defined by a set of generators along with the color of each facelet
+#[cfg_attr(feature = "serde", derive(serde::Deserialize))]
+#[cfg_attr(feature = "serde", serde(try_from = "serialize::DecodedPermGroup"))]
 #[derive(Clone, Debug)]
 pub struct PermutationGroup {
     facelet_colors: Vec<ArcIntern<str>>,
@@ -25,6 +29,7 @@ pub struct PermutationGroup {
     generators: HashMap<ArcIntern<str>, Permutation>,
     generator_inverses: HashMap<ArcIntern<str>, ArcIntern<str>>,
     orbits: OnceLock<Arc<UnionFind<(), ()>>>,
+    maybe_def: Option<ArcIntern<str>>,
 }
 
 impl PermutationGroup {
@@ -72,6 +77,7 @@ impl PermutationGroup {
             generators,
             generator_inverses,
             orbits: OnceLock::new(),
+            maybe_def: None,
         }
     }
 
@@ -104,6 +110,11 @@ impl PermutationGroup {
         self.generators
             .iter()
             .map(|(name, perm)| (name.to_owned(), perm))
+    }
+
+    /// Return the puzzle definition if this `PermutationGroup` was created via puzzlegeometry
+    pub fn maybe_def(&self) -> Option<ArcIntern<str>> {
+        self.maybe_def.clone()
     }
 
     /// Compose a list of generators into an existing permutation
@@ -159,6 +170,10 @@ impl PermutationGroup {
 
 impl PartialEq for PermutationGroup {
     fn eq(&self, other: &Self) -> bool {
+        if let (Some(a), Some(b)) = (self.maybe_def(), other.maybe_def()) {
+            return a == b
+        }
+
         self.facelet_colors == other.facelet_colors
             && self.piece_assignments == other.piece_assignments
             && self.generators == other.generators
@@ -196,20 +211,6 @@ impl core::fmt::Display for Permutation {
             }
             Ok(())
         }
-    }
-}
-
-impl From<Permutation> for String {
-    fn from(value: Permutation) -> Self {
-        value.to_string()
-    }
-}
-
-impl TryFrom<String> for Permutation {
-    type Error = String;
-
-    fn try_from(value: String) -> Result<Self, Self::Error> {
-        value.parse()
     }
 }
 

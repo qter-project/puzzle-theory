@@ -78,6 +78,18 @@ pub struct Span {
     line_and_col: OnceLock<(usize, usize)>,
 }
 
+impl PartialEq for Span {
+    fn eq(&self, other: &Self) -> bool {
+        if self.source.contents == other.source.contents {
+            self.start == other.start && self.end == other.end
+        } else {
+            self.slice() == other.slice()
+        }
+    }
+}
+
+impl Eq for Span {}
+
 impl Span {
     /// Creates a new `Span` from the given source and start/end positions
     ///
