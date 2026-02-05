@@ -157,6 +157,16 @@ impl PermutationGroup {
     }
 }
 
+impl PartialEq for PermutationGroup {
+    fn eq(&self, other: &Self) -> bool {
+        self.facelet_colors == other.facelet_colors
+            && self.piece_assignments == other.piece_assignments
+            && self.generators == other.generators
+    }
+}
+
+impl Eq for PermutationGroup {}
+
 /// An element of a permutation group
 #[derive(Clone)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
