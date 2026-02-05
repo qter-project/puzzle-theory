@@ -1,10 +1,11 @@
 use std::{
-    cell::OnceCell, cmp::{Ordering, Reverse}, collections::{BTreeSet, HashMap}, mem, num::NonZeroU16, ops::{Add, Sub}, sync::{Arc, OnceLock}
+    cell::OnceCell, cmp::{Ordering, Reverse}, collections::{BTreeSet, HashMap}, fmt::Display, mem, num::NonZeroU16, ops::{Add, Sub}, sync::{Arc, OnceLock}
 };
 
 use crate::{
     ksolve::{KSolve, KSolveMove, KSolveSet}, permutations::{Permutation, PermutationGroup, schreier_sims::StabilizerChain}, puzzle_geometry::knife::Region, span::Span
 };
+use chumsky::error::Rich;
 use edge_cloud::EdgeCloud;
 use internment::ArcIntern;
 use itertools::Itertools;
@@ -187,18 +188,40 @@ pub struct Polyhedron(pub Vec<Face>);
 pub struct PuzzleGeometryDefinition {
     pub polyhedron: Polyhedron,
     pub cut_surfaces: Vec<Arc<dyn CutSurface>>,
-    pub definition: Span,
+    pub definition: ArcIntern<str>,
 }
 
 #[derive(Clone, Debug)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "serde", serde(try_from = "String", into = "String"))]
 pub struct PuzzleGeometry {
     stickers: Vec<(Face, Vec<ArcIntern<str>>)>,
     turns: HashMap<ArcIntern<str>, (Vector<3>, Matrix<3, 3>, usize)>,
-    definition: Span,
+    definition: ArcIntern<str>,
     perm_group_data: OnceLock<(Arc<PermutationGroup>, BTreeSet<usize>)>,
     non_fixed_stickers: OnceLock<Vec<(Face, Vec<ArcIntern<str>>)>>,
     pieces_data: OnceLock<Arc<PiecesData>>,
     ksolve_data: OnceLock<Arc<KSolve>>,
+}
+
+impl Display for PuzzleGeometry {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.definition)
+    }
+}
+
+impl From<PuzzleGeometry> for String {
+    fn from(value: PuzzleGeometry) -> Self {
+        value.to_string()
+    }
+}
+
+impl TryFrom<String> for PuzzleGeometry {
+    type Error = Rich<'static, char, Span>;
+
+    fn try_from(value: String) -> std::result::Result<Self, Self::Error> {
+        value.parse().map_err(|v: Vec<Rich<'static, char, Span>>| v.into_iter().next().unwrap())
+    }
 }
 
 /// Data about an individual piece of the twisty puzzle
@@ -374,12 +397,16 @@ impl PuzzleGeometry {
                     .enumerate()
                     .filter(|(i, _)| !to_skip.contains(i)).map(|(_, v)| v);
 
-            (Arc::new(PermutationGroup::new(
+            let mut group = PermutationGroup::new(
                     iter_stickers().map(|(v, _)| ArcIntern::clone(&v.color))
                     .collect(),
                 iter_stickers().map(|(_, v)| ArcIntern::from(v.iter().map(|v|&**v).join(""))).collect(),
                 generators,
-            )), to_skip)
+            );
+
+            group.maybe_def = Some(ArcIntern::clone(&self.definition));
+
+            (Arc::new(group), to_skip)
         })
     }
 

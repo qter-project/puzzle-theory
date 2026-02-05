@@ -1,4 +1,7 @@
-use std::sync::{Arc, LazyLock};
+use std::{
+    str::FromStr,
+    sync::{Arc, LazyLock},
+};
 
 use chumsky::{
     Parser,
@@ -48,6 +51,17 @@ pub fn puzzle(def: &'static str) -> Arc<PuzzleGeometry> {
         .into_output()
         .unwrap()
         .into_inner()
+}
+
+impl FromStr for PuzzleGeometry {
+    type Err = Vec<Rich<'static, char, Span>>;
+
+    fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
+        puzzle_definition()
+            .parse(File::new(ArcIntern::from("<input>"), ArcIntern::from(s)))
+            .into_result()
+            .map(|v| (*v.into_inner()).clone())
+    }
 }
 
 static THREE_BY_THREE: LazyLock<Arc<PuzzleGeometry>> = LazyLock::new(|| {

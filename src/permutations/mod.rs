@@ -29,7 +29,7 @@ pub struct PermutationGroup {
     generators: HashMap<ArcIntern<str>, Permutation>,
     generator_inverses: HashMap<ArcIntern<str>, ArcIntern<str>>,
     orbits: OnceLock<Arc<UnionFind<(), ()>>>,
-    maybe_def: Option<ArcIntern<str>>,
+    pub(crate) maybe_def: Option<ArcIntern<str>>,
 }
 
 impl PermutationGroup {
