@@ -99,11 +99,7 @@ static THREE_BY_THREE: LazyLock<Arc<PuzzleGeometry>> = LazyLock::new(|| {
                 name: ArcIntern::from("L"),
             }),
         ],
-        definition: Span::new(
-            File::new(ArcIntern::from("<static>"), ArcIntern::from("3x3x3")),
-            0,
-            5,
-        ),
+        definition: ArcIntern::from("3x3x3"),
     };
 
     Arc::new(cube.geometry().unwrap())
@@ -159,11 +155,7 @@ static PYRAMINX: LazyLock<Arc<PuzzleGeometry>> = LazyLock::new(|| {
                 name: ArcIntern::from("H"),
             }),
         ],
-        definition: Span::new(
-            File::new(ArcIntern::from("<static>"), ArcIntern::from("pyraminx")),
-            0,
-            8,
-        ),
+        definition: ArcIntern::from("pyraminx"),
     };
 
     Arc::new(pyraminx.geometry().unwrap())
@@ -186,11 +178,7 @@ static MEGAMINX: LazyLock<Arc<PuzzleGeometry>> = LazyLock::new(|| {
                 }) as Arc<dyn CutSurface + 'static>
             })
             .collect(),
-        definition: Span::new(
-            File::new(ArcIntern::from("<static>"), ArcIntern::from("dodecahedron")),
-            0,
-            "dodecahedron".len(),
-        ),
+        definition: ArcIntern::from("dodecahedron"),
     };
 
     Arc::new(megaminx.geometry().unwrap())
