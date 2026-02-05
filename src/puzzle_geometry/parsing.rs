@@ -42,11 +42,12 @@ pub fn puzzle_definition()
 ///
 /// Panics if the definition is invalid.
 #[must_use]
-pub fn puzzle(def: &'static str) -> WithSpan<Arc<PuzzleGeometry>> {
+pub fn puzzle(def: &'static str) -> Arc<PuzzleGeometry> {
     puzzle_definition()
         .parse(File::new(ArcIntern::from("<static>"), ArcIntern::from(def)))
         .into_output()
         .unwrap()
+        .into_inner()
 }
 
 static THREE_BY_THREE: LazyLock<Arc<PuzzleGeometry>> = LazyLock::new(|| {
