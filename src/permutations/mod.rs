@@ -525,6 +525,19 @@ impl Permutation {
         self.cycles = OnceLock::new();
         self.passive = OnceLock::new();
     }
+
+    /// Permute the list `items` according to the permutation
+    ///
+    /// # Panics
+    ///
+    /// Panics if the list of items is less than the length of the permutation
+    pub fn apply<T>(&self, items: &mut [T]) {
+        for cycle in self.cycles() {
+            for (a, b) in cycle.iter().rev().tuple_windows() {
+                items.swap(*a, *b);
+            }
+        }
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -825,6 +838,17 @@ mod tests {
                 .minimal(),
             &[1, 3, 2, 0]
         );
+    }
+
+    #[test]
+    fn perm_apply() {
+        let perm = Permutation::from_mapping(vec![3, 0, 2, 1]);
+
+        let mut items = [1, 2, 3, 4];
+
+        perm.apply(&mut items);
+
+        assert_eq!(items, [2, 4, 3, 1]);
     }
 
     #[test]
