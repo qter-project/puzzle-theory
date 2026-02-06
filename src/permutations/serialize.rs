@@ -84,7 +84,7 @@ impl TryFrom<DecodedPermGroup> for PermutationGroup {
                     def.permutation_group()
                 };
 
-                Ok(Arc::into_inner(group).unwrap())
+                Ok(Arc::unwrap_or_clone(group))
             },
             DecodedPermGroup::Args((facelet_colors, piece_assignments, generators)) => {
                 Ok(PermutationGroup::new(facelet_colors, piece_assignments, generators))
