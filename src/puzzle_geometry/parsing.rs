@@ -99,7 +99,7 @@ static THREE_BY_THREE: LazyLock<Arc<PuzzleGeometry>> = LazyLock::new(|| {
                 name: ArcIntern::from("L"),
             }),
         ],
-        definition: ArcIntern::from("3x3x3"),
+        definition: ArcIntern::from("3x3"),
     };
 
     Arc::new(cube.geometry().unwrap())
