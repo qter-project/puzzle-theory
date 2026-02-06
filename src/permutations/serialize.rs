@@ -46,7 +46,7 @@ impl Serialize for PermutationGroup {
 }
 
 #[derive(Deserialize)]
-#[serde(tag = "untagged")]
+#[serde(untagged)]
 pub enum DecodedPermGroup {
     Def(ArcIntern<str>),
     Args(
