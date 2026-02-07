@@ -31,3 +31,5 @@
   - Don't require `PuzzleGeometry::ksolve` to do casts
 - Replace internment with sarlacc and newtype some intern types
 - Remove the `Point` newtype
+- 😎Refactor spans to form a tree structure
+

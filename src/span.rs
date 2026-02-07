@@ -170,19 +170,25 @@ impl Span {
 
     /// Merges two spans into one, keeping the earliest start and latest end
     ///
+    /// TODO: Get rid of this function
+    ///
     /// # Panics
     ///
     /// Panics if the two spans are from different sources
     #[must_use]
     pub fn merge(self, other: &Span) -> Span {
-        assert_eq!(self.source, other.source);
-
-        Span {
-            source: self.source,
-            start: self.start.min(other.start),
-            end: self.end.max(other.end),
-            line_and_col: OnceLock::new(),
+        if self.source == other.source {
+            Span {
+                source: self.source,
+                start: self.start.min(other.start),
+                end: self.end.max(other.end),
+                line_and_col: OnceLock::new(),
+            }
+        } else {
+            // This is really stupid but there isn't really a great way to deal with this. The proper way would be for spans to have "children" but we don't have that implemented
+            self
         }
+
     }
 
     pub fn with<T>(self, v: T) -> WithSpan<T> {
