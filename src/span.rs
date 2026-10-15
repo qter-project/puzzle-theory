@@ -98,7 +98,7 @@ impl Span {
     /// Panics if the start or end positions are out of bounds, or if the start is greater than the end
     #[must_use]
     pub fn new(source: File, start: usize, end: usize) -> Span {
-        assert!(start < end);
+        assert!(start <= end);
         assert!(start <= source.contents.len());
         assert!(end <= source.contents.len());
 
