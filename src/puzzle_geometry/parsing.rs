@@ -3,41 +3,14 @@ use std::{
     sync::{Arc, LazyLock},
 };
 
-use chumsky::{
-    Parser,
-    error::Rich,
-    extra::Full,
-    prelude::{choice, just},
-};
 use internment::ArcIntern;
 
-use crate::{
-    puzzle_geometry::{
+use crate::puzzle_geometry::{
         PuzzleDescriptionString, PuzzleGeometry, PuzzleGeometryDefinition,
         knife::{CutSurface, PlaneCut},
         num::{Num, Vector},
         shapes::{CUBE, DODECAHEDRON, TETRAHEDRON},
-    },
-    span::{File, Span, WithSpan},
-};
-
-/// Parse a puzzle definition
-#[must_use]
-pub fn puzzle_definition()
--> impl Parser<'static, File, WithSpan<Arc<PuzzleGeometry>>, Full<Rich<'static, char, Span>, (), ()>>
-{
-    choice((
-        just("3x3")
-            .to_span()
-            .map(|span: Span| span.with(Arc::clone(&*THREE_BY_THREE))),
-        just("pyraminx")
-            .to_span()
-            .map(|span: Span| span.with(Arc::clone(&*PYRAMINX))),
-        just("megaminx")
-            .to_span()
-            .map(|span: Span| span.with(Arc::clone(&*MEGAMINX))),
-    ))
-}
+    };
 
 /// Get a puzzle from a static definition. Useful for testcases.
 ///
@@ -46,21 +19,30 @@ pub fn puzzle_definition()
 /// Panics if the definition is invalid.
 #[must_use]
 pub fn puzzle(def: &'static str) -> Arc<PuzzleGeometry> {
-    puzzle_definition()
-        .parse(File::new(ArcIntern::from("<static>"), ArcIntern::from(def)))
-        .into_output()
-        .unwrap()
-        .into_inner()
+    if def == "3x3" {
+        (*THREE_BY_THREE).clone()
+    } else if def == "pyraminx" {
+        (*PYRAMINX).clone()
+    } else if def == "megaminx" {
+        (*MEGAMINX).clone()
+    } else {
+        panic!("Unknown def `{def}`");
+    }
 }
 
 impl FromStr for PuzzleGeometry {
-    type Err = Vec<Rich<'static, char, Span>>;
+    type Err = String;
 
     fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
-        puzzle_definition()
-            .parse(File::new(ArcIntern::from("<input>"), ArcIntern::from(s)))
-            .into_result()
-            .map(|v| (*v.into_inner()).clone())
+        Ok(if s == "3x3" {
+            (**THREE_BY_THREE).clone()
+        } else if s == "pyraminx" {
+            (**PYRAMINX).clone()
+        } else if s == "megaminx" {
+            (**MEGAMINX).clone()
+        } else {
+            return Err(format!("Unknown puzzle definition `{s}`"))
+        })
     }
 }
 

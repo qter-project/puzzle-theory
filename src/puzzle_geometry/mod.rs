@@ -3,9 +3,8 @@ use std::{
 };
 
 use crate::{
-    ksolve::{KSolve, KSolveMove, KSolveSet}, permutations::{Permutation, PermutationGroup, schreier_sims::StabilizerChain}, puzzle_geometry::knife::Region, span::Span
+    ksolve::{KSolve, KSolveMove, KSolveSet}, permutations::{Permutation, PermutationGroup, schreier_sims::StabilizerChain}, puzzle_geometry::knife::Region
 };
-use chumsky::error::Rich;
 use edge_cloud::EdgeCloud;
 use internment::ArcIntern;
 use itertools::Itertools;
@@ -217,10 +216,10 @@ impl From<PuzzleGeometry> for String {
 }
 
 impl TryFrom<String> for PuzzleGeometry {
-    type Error = Rich<'static, char, Span>;
+    type Error = String;
 
     fn try_from(value: String) -> std::result::Result<Self, Self::Error> {
-        value.parse().map_err(|v: Vec<Rich<'static, char, Span>>| v.into_iter().next().unwrap())
+        value.parse()
     }
 }
 
