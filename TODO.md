@@ -21,8 +21,43 @@
 - ⭐Calculate the symmetries of the puzzle
 - Figure out algebraics
   - Acceptance criterion: All default puzzles can be processed in <1s with exact arithmetic
+  - Remove usages of square roots and use a field extension instead of algebraics
 - Parse our modified puzzlegeometry definition string
 - Spherical cuts
+- Make the ksolve stuff zero indexed
+
+### GRIP THEORY REFACTOR IDEATION
+
+- `PuzzleGeometryDefinition`
+  - Converts to `GripTheoryRepr`
+    - Expresses each piece as a collection of 1x1's where the grip group is represented as a set of orthogonal matrices
+    - Supports binding and shapeshifting
+    - Converts to `FiniteGripTheoryRepr`
+      - Grip group is a cayley table or some other finite group repr
+      - Supports SIMD composition?
+      - Converts to `NonBindingGripTheoryRepr`
+        - Binding is checked for and erased
+        - Converts to `KSolvePuzzle`
+        - Converts to our current `PuzzleGeometry`
+          - Shapeshifting is checked for and erased
+          - Converts to `PermutationGroup` on stickers
+
+#### Open questions
+
+- Definition format
+  - Cannot autodetect rotation angles
+    - How do we specify them?
+  - Rhai as definition language?
+- SIMD composition of grip theory reprs
+  - How _exactly_ would that work?
+- What do we do about `algebraics`?
+  - It's possible to have rotation angles that are non-algebraic
+  - Arbitrary field extension?
+  - f128?
+  - f64?
+- Should we factor puzzlegeometry out of this repo? It's getting quite big
+- Should we support arbitrary dimensional puzzles?
+  - Probably no bc quaternions
 
 ## Misc
 
